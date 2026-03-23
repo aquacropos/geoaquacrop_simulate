@@ -8,6 +8,7 @@ import datetime as dt
 from pathlib import Path
 from multiprocessing import freeze_support
 from config import SimulationConfig, InputRequirements
+from aquacrop import InitialWaterContent
 from processor import ParallelProcessor
 
 
@@ -44,7 +45,7 @@ def print_input_requirements():
         print(f"    - Variable name: '{var}'")
         print(f"    - Units: {info['units']}")
         print(f"    - Description: {info['description']}")
-    print("  • Required dimensions: time, lat, lon")
+    print("  • Required dimensions: time, y, x")
     print("  • Coordinate system: WGS84 (EPSG:4326)")
     
     print("\n2. SOIL DATA (GeoTIFF files in soil_path/):")
@@ -79,15 +80,15 @@ def main():
 
     # --- USER EDITS THESE VALUES ---
     config_dict = {
-        'weather_path': '/path/to/weather',
-        'soil_path': '/path/to/soil',
-        'pheno_path': '/path/to/phenology',
-        'start_date': '2000-01-01',
-        'end_date': '2005-12-31',
+        'weather_path': '../../aquacropgrid-preproc-main/aquacropgrid-preproc-main/processed',
+        'soil_path': '../../aquacropgrid-preproc-main/aquacropgrid-preproc-main/processed',
+        'pheno_path': '../../aquacropgrid-preproc-main/aquacropgrid-preproc-main/processed',
+        'start_date': '2010/01/01',
+        'end_date': '2011/12/31',
         'crop': 'maize',
         'irrigation': 'rainfed',
-        'initial_water_content': 100,   # %
-        'output_dir': '/path/to/output'
+        'initial_water_content': InitialWaterContent(['FC']),   # %
+        'output_dir': '../../outputs'
     }
 
     # --- 1. Load config from config.py ---

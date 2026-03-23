@@ -4,8 +4,9 @@ Defines input requirements and validation functions.
 """
 
 import os
+import warnings
 import xarray as xr
-import rasterio
+#import rasterio
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -16,25 +17,38 @@ class InputRequirements:
     """Define standardized input file requirements."""
     
     # Required weather variables in NetCDF files
+    # CHANGED: use actual variable names MinTemp, MaxTemp, Precipitation, ReferenceET
     WEATHER_VARS = {
-        'tasmin': {'units': '°C', 'description': 'Minimum daily temperature'},
-        'tasmax': {'units': '°C', 'description': 'Maximum daily temperature'},
-        'pr': {'units': 'mm/day', 'description': 'Daily precipitation'},
-        'referenceET': {'units': 'mm/day', 'description': 'Reference evapotranspiration'}
+        'MinTemp': {
+            'units': '°C',
+            'description': 'Minimum daily temperature'
+        },
+        'MaxTemp': {
+            'units': '°C',
+            'description': 'Maximum daily temperature'
+        },
+        'Precipitation': {
+            'units': 'mm/day',
+            'description': 'Daily precipitation'
+        },
+        'ReferenceET': {
+            'units': 'mm/day',
+            'description': 'Reference evapotranspiration'
+        }
     }
     
     # Required dimensions for weather NetCDF
-    WEATHER_DIMS = ['time', 'lat', 'lon']
+    WEATHER_DIMS = ['time', 'x', 'y']
     
-    # Required soil raster files (% values)
-    SOIL_FILES = {
-        'sand_0_30cm.tif': 'Sand content 0-30cm (%)',
-        'sand_30_200cm.tif': 'Sand content 30-200cm (%)',
-        'clay_0_30cm.tif': 'Clay content 0-30cm (%)',
-        'clay_30_200cm.tif': 'Clay content 30-200cm (%)',
-        'orgmat_0_30cm.tif': 'Organic matter 0-30cm (%)',
-        'orgmat_30_200cm.tif': 'Organic matter 30-200cm (%)'
-    }
+    # Required soil NetCDF files 
+    SOIL_FILES = [
+        'soil_0-5.nc',
+        'soil_5-15.nc',
+        'soil_15-30.nc',
+        'soil_30-60.nc',
+        'soil_60-100.nc',
+        'soil_100-200.nc'
+    ]
     
     # Required phenology raster files per crop
     PHENO_PATTERNS = {
@@ -53,16 +67,21 @@ class InputValidator:
     """Validate input files meet requirements."""
 
     @staticmethod
-    def validate_weather_data(weather_path: Path) -> Dict[str, str]:
+    # CHANGED: now takes start_year, end_year
+    def validate_weather_data(weather_path: Path, start_year: int, end_year: int) -> Dict[str, str]:
         """
         Validate weather NetCDF files.
-        Returns dict of variable: filepath or raises ValueError.
+        Expects filenames like {var}{start_year}{end_year}.nc,
+        where var ∈ {MinTemp, MaxTemp, Precipitation, ReferenceET}.
+        
+        Returns dict of variable_name: filepath or raises ValueError.
         """
         validated_files = {}
         errors = []
         
         for var, info in InputRequirements.WEATHER_VARS.items():
-            filepath = weather_path / f"{var}.nc"
+            filename = f"{var}{start_year}{end_year}.nc"
+            filepath = weather_path / filename
             
             if not filepath.exists():
                 errors.append(f"Missing weather file: {filepath}")
@@ -73,119 +92,213 @@ class InputValidator:
                     # Check dimensions
                     missing_dims = set(InputRequirements.WEATHER_DIMS) - set(ds.dims)
                     if missing_dims:
-                        errors.append(f"{var}.nc missing dimensions: {missing_dims}")
+                        errors.append(f"{filename} missing dimensions: {missing_dims}")
                     
-                    # Check variable exists
+                    # Check variable exists (assume variable name == var string)
                     if var not in ds.variables:
-                        errors.append(f"{var}.nc must contain variable '{var}'")
+                        errors.append(f"{filename} must contain variable '{var}'")
                     
                     validated_files[var] = str(filepath)
                     
             except Exception as e:
-                errors.append(f"Error reading {var}.nc: {str(e)}")
+                errors.append(f"Error reading {filename}: {str(e)}")
         
         if errors:
             raise ValueError("Weather data validation failed:\n" + "\n".join(errors))
         
         return validated_files
 
-    @staticmethod
-    def _check_spatial_alignment(ref_coords: pd.DataFrame, raster_file: Path, label: str):
-        """Ensure raster grid aligns with reference coords_df from precipitation file."""
-        with rasterio.open(raster_file) as src:
+    # @staticmethod
+    # def _check_spatial_alignment(ref_coords: pd.DataFrame, raster_file: Path, label: str):
+    #     """Ensure raster grid aligns with reference coords_df from precipitation file."""
+    #     with rasterio.open(raster_file) as src:
             
-            # Extract 1D arrays of lat/lon
-            lats = [src.xy(row, 0)[1] for row in range(src.height)]
-            lons = [src.xy(0, col)[0] for col in range(src.width)]
+    #         # Extract 1D arrays of lat/lon
+    #         lats = [src.xy(row, 0)[1] for row in range(src.height)]
+    #         lons = [src.xy(0, col)[0] for col in range(src.width)]
 
-            raster_coords = {(round(lat, 6), round(lon, 6)) for lat in lats for lon in lons}
-            ref_set = {(round(lat, 6), round(lon, 6)) for lat, lon in zip(ref_coords['lat'], ref_coords['lon'])}
+    #         raster_coords = {(round(lat, 6), round(lon, 6)) for lat in lats for lon in lons}
+    #         ref_set = {(round(lat, 6), round(lon, 6)) for lat, lon in zip(ref_coords['lat'], ref_coords['lon'])}
 
-            if not raster_coords.issubset(ref_set):
-                raise ValueError(f"{label} grid does not align with precipitation grid")
+    #         if not raster_coords.issubset(ref_set):
+    #             raise ValueError(f"{label} grid does not align with precipitation grid")
     
     @staticmethod
     def validate_soil_data(soil_path: Path, ref_coords: pd.DataFrame) -> Dict[str, str]:
         """
-        Validate soil raster files.
-        Returns dict of soil_type: filepath or raises ValueError.
+        Validate soil NetCDF files (soil_0-5.nc, soil_5-15.nc, ...).
+        Returns dict mapping depth keys used by the model (e.g. '0_5cm')
+        to file paths.
         """
         validated_files = {}
         errors = []
-        
-        for filename, description in InputRequirements.SOIL_FILES.items():
+    
+        # Map filenames -> keys used in DataLoader.load_soil_for_point
+        depth_key_map = {
+            'soil_0-5.nc': '0_5cm',
+            'soil_5-15.nc': '5_15cm',
+            'soil_15-30.nc': '15_30cm',
+            'soil_30-60.nc': '30_60cm',
+            'soil_60-100.nc': '60_100cm',
+            'soil_100-200.nc': '100_200cm',
+        }
+    
+        # Build reference coord set once for alignment checks
+        ref_set = {
+            (round(lat, 6), round(lon, 6))
+            for lat, lon in zip(ref_coords['y'], ref_coords['x'])
+        }
+    
+        for filename in InputRequirements.SOIL_FILES:
             filepath = soil_path / filename
-            
+    
             if not filepath.exists():
-                errors.append(f"Missing soil file: {filepath} ({description})")
+                errors.append(f"Missing soil file: {filepath}")
                 continue
-            
+    
             try:
-                with rasterio.open(filepath) as src:
-                    # Check if raster has data
-                    if src.count < 1:
-                        errors.append(f"{filename} has no bands")
-                    
-                    # Check CRS exists
-                    if src.crs is None:
-                        errors.append(f"{filename} missing CRS")
-                    
-                    # Check spatial grid aligns with climate data
-                    InputValidator._check_spatial_alignment(ref_coords, filepath, f"Soil ({filename})")
-
-                    # Store as a validated file
-                    validated_files[filename.replace('.tif', '')] = str(filepath)
-                    
+                with xr.open_dataset(filepath) as ds:
+                    # Check required dimensions
+                    missing_dims = {'y', 'x'} - set(ds.dims)
+                    if missing_dims:
+                        errors.append(f"{filename} missing dimensions: {missing_dims}")
+    
+                    # Check required variables
+                    required_vars = {'Clay', 'Sand', 'Silt', 'Som'}
+                    missing_vars = required_vars - set(ds.data_vars)
+                    if missing_vars:
+                        errors.append(f"{filename} missing variables: {missing_vars}")
+    
+                    # Check spatial alignment against climate grid
+                    lats = ds['y'].values
+                    lons = ds['x'].values
+                    soil_coords = {
+                        (round(lat, 6), round(lon, 6))
+                        for lat in lats for lon in lons
+                    }
+    
+                    if not soil_coords.issubset(ref_set):
+                        warnings.warn(
+                            f"Soil ({filename}) grid not exactly aligned with precipitation grid. "
+                            f"Nearest-neighbour selection will be used at runtime."
+                        )
+    
+                    # Store validated file under the depth key expected by DataLoader
+                    key = depth_key_map.get(filename, filename.replace('.nc', ''))
+                    validated_files[key] = str(filepath)
+    
             except Exception as e:
                 errors.append(f"Error reading {filename}: {str(e)}")
-        
+    
         if errors:
             raise ValueError("Soil data validation failed:\n" + "\n".join(errors))
-        
+    
         return validated_files
+
     
     @staticmethod
-    def validate_phenology_data(pheno_path: Path, crop: str, irrigation: str, ref_coords: pd.DataFrame) -> Dict[str, str]:
+    def validate_phenology_data(
+        pheno_path: Path,
+        crop: str,
+        irrigation: str,
+        ref_coords: pd.DataFrame
+    ) -> Dict[str, str]:
         """
-        Validate phenology raster files for specific crop and irrigation type.
-        Returns dict of pheno_type: filepath or raises ValueError.
+        Validate phenology NetCDF for a specific crop and irrigation type.
+        Uses a single 'cropcalendar.nc' file which contains variables like:
+        e.g. Maize_rf_planting, Maize_rf_growing_season_length, etc.
+        
+        Returns dict of pheno_type -> filepath or raises ValueError.
         """
         validated_files = {}
         errors = []
-        
-        crop_lower = crop.lower()
-        irr_suffix = 'ir' if irrigation.lower() == 'irrigated' else 'rf'
-        
-        if crop_lower not in InputRequirements.CROPS:
-            raise ValueError(f"Unsupported crop: {crop}. Supported: {InputRequirements.CROPS}")
-        
-        for pheno_type, pattern in InputRequirements.PHENO_PATTERNS.items():
-            # Expected filename format: {crop}_{irrigation}_{pheno_type}.tif
-            filename = f"{crop_lower}_{irr_suffix}{pattern}"
-            filepath = pheno_path / filename
-            
-            if not filepath.exists():
-                errors.append(f"Missing phenology file: {filepath}")
-                continue
-            
-            try:
-                with rasterio.open(filepath) as src:
-                    if src.count < 1:
-                        errors.append(f"{filename} has no bands")
 
-                    # Check spatial alignment against climate data
-                    InputValidator._check_spatial_alignment(ref_coords, filepath, f"Phenology ({filename})")
-                    
-                    # Store validated file
-                    validated_files[pheno_type] = str(filepath)
-                    
+        crop_lower = crop.lower()
+        if crop_lower not in InputRequirements.CROPS:
+            raise ValueError(
+                f"Unsupported crop: {crop}. Supported: {InputRequirements.CROPS}"
+            )
+
+        # Map irrigation type to suffix used in variable names
+        irr_tag = "ir" if irrigation.lower() == "irrigated" else "rf"
+
+        # We now always use a single NetCDF
+        filename = "cropcalendar.nc"
+        filepath = pheno_path / filename
+
+        if not filepath.exists():
+            errors.append(f"Missing phenology file: {filepath}")
+        else:
+            try:
+                with xr.open_dataset(filepath) as ds:
+                    # ---- 1) Spatial alignment check (x/y vs lat/lon) ----
+                    # x = lon, y = lat in your example file
+                    if "x" not in ds.coords or "y" not in ds.coords:
+                        errors.append(f"{filename} missing x/y coordinates")
+                    else:
+                        pheno_lons = ds["x"].values
+                        pheno_lats = ds["y"].values
+                        pheno_coords = {
+                            (round(lat, 6), round(lon, 6))
+                            for lat in pheno_lats
+                            for lon in pheno_lons
+                        }
+                        ref_set = {
+                            (round(lat, 6), round(lon, 6))
+                            for lat, lon in zip(ref_coords["y"], ref_coords["x"])
+                        }
+                        if not pheno_coords.issubset(ref_set):
+                            warnings.warn(
+                                f"Phenology ({filename}) grid not exactly aligned with precipitation grid. "
+                                f"Nearest-neighbour selection will be used at runtime."
+                            )
+        
+                    # ---- 2) Check that the appropriate variables exist ----
+                    # Variables look like:
+                    #   Maize_rf_planting
+                    #   Maize_rf_growing_season_length
+                    crop_title = crop_lower.capitalize()  # maize -> Maize, wheat -> Wheat
+
+                    planting_suffix = f"_{irr_tag}_planting"
+
+                    # Find the first planting variable that matches this crop + irrigation
+                    planting_var = None
+                    for v in ds.data_vars:
+                        if v.startswith(f"{crop_title}_") and v.endswith(planting_suffix):
+                            planting_var = v
+                            break
+
+                    if planting_var is None:
+                        errors.append(
+                            f"No planting variable found in {filename} for crop={crop}, irrigation={irrigation}"
+                        )
+                    else:
+                        # Derive corresponding growing-season-length variable
+                        prefix = planting_var[: -len(planting_suffix)]
+                        gsl_var = f"{prefix}_{irr_tag}_growing_season_length"
+
+                        if gsl_var not in ds.data_vars:
+                            errors.append(
+                                f"In {filename}, missing growing season variable '{gsl_var}' "
+                                f"for crop={crop}, irrigation={irrigation}"
+                            )
+                        else:
+                            # Both planting_day and growing_season_length come from the same file
+                            validated_files["planting_day"] = str(filepath)
+                            validated_files["growing_season_length"] = str(filepath)
+
             except Exception as e:
                 errors.append(f"Error reading {filename}: {str(e)}")
-        
+
         if errors:
-            raise ValueError(f"Phenology data validation failed for {crop} ({irrigation}):\n" + "\n".join(errors))
-        
+            raise ValueError(
+                f"Phenology data validation failed for {crop} ({irrigation}):\n"
+                + "\n".join(errors)
+            )
+
         return validated_files
+
+
 
 
 class SimulationConfig:
@@ -198,8 +311,9 @@ class SimulationConfig:
         
     def _validate_config(self):
         """Validate all configuration parameters."""
+        # coord_file is no longer required – we derive coords from the weather grid
         required_keys = [
-            'coord_file', 'weather_path', 'soil_path', 'pheno_path',
+            'weather_path', 'soil_path', 'pheno_path',
             'start_date', 'end_date', 'crop', 'irrigation',
             'initial_water_content', 'output_dir'
         ]
@@ -209,15 +323,18 @@ class SimulationConfig:
             raise ValueError(f"Missing configuration keys: {missing_keys}")
         
         # Convert paths to Path objects
-        for key in ['coord_file', 'weather_path', 'soil_path', 'pheno_path', 'output_dir']:
+        for key in ['weather_path', 'soil_path', 'pheno_path', 'output_dir']:
             self.config[key] = Path(self.config[key])
         
         # Validate dates
-        try:
-            pd.to_datetime(self.config['start_date'])
-            pd.to_datetime(self.config['end_date'])
-        except:
-            raise ValueError("Invalid date format. Use 'YYYY-MM-DD'")
+        for key in ['start_date', 'end_date']:
+            parts = self.config[key].split('/')
+            if len(parts) != 3:
+                raise ValueError(f"Invalid date format for '{key}': '{self.config[key]}'. Use 'YYYY/MM/DD'")
+            try:
+                pd.to_datetime(self.config[key], format='%Y/%m/%d')
+            except Exception:
+                raise ValueError(f"Invalid date for '{key}': '{self.config[key]}'. Use 'YYYY/MM/DD'")
         
         # Validate crop
         if self.config['crop'].lower() not in InputRequirements.CROPS:
@@ -230,28 +347,39 @@ class SimulationConfig:
         # Create output directory if it doesn't exist
         self.config['output_dir'].mkdir(parents=True, exist_ok=True)
 
-    def _get_coordinates_from_weather(self, pr_file: Path) -> pd.DataFrame:
-        with xr.open_dataset(pr_file) as ds:
-            lats = ds['lat'].values
-            lons = ds['lon'].values
-            coords = [(lat, lon) for lat in lats for lon in lons]
-        return pd.DataFrame(coords, columns=['lat', 'lon'])
+    def _get_coordinates_from_weather(self, precip_file: Path) -> pd.DataFrame:
+        with xr.open_dataset(precip_file) as ds:
+            print(ds['Precipitation'])  # shows dims, shape, coords
+            precip_slice = ds['Precipitation'].isel(time=0)
+            print(precip_slice.dims, precip_slice.shape)
+            mask = precip_slice.squeeze().notnull().values
+            print("mask shape:", mask.shape)
+            lats, lons = np.meshgrid(ds.y.values, ds.x.values, indexing='ij')
+            print("meshgrid shape:", lats.shape)
+            return pd.DataFrame({
+                'y': lats[mask],
+                'x': lons[mask],
+            })
     
     def validate_all_inputs(self) -> Dict:
         """Validate all input files and return paths."""
         print("Validating input files...")
         
-        # Validate coordinates
-        # print("  Checking coordinates...")
-        # coords_df = InputValidator.validate_coordinates(self.config['coord_file'])
+        # Derive file-year suffix from config start/end dates
+        start_year = pd.to_datetime(self.config['start_date']).year
+        end_year = pd.to_datetime(self.config['end_date']).year
         
         # Validate weather data
         print("  Checking weather data...")
-        weather_files = InputValidator.validate_weather_data(self.config['weather_path'])
+        weather_files = InputValidator.validate_weather_data(
+            self.config['weather_path'],
+            start_year,
+            end_year
+        )
 
-        # Build coords from pr.nc
+        # Build coords from Precipitation file
         print("  Extracting coordinates from precipitation grid...")
-        coords_df = self._get_coordinates_from_weather(Path(weather_files['pr']))
+        coords_df = self._get_coordinates_from_weather(Path(weather_files['Precipitation']))
         
         # Validate soil data
         print("  Checking soil data...")
