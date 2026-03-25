@@ -36,11 +36,9 @@ class DataLoader:
                 # Filter time range
                 point_data = point_data.sel(time=slice(start_date, end_date))
                 
-                print('Point data: ', point_data)
-                
                 # Convert to dataframe
                 df = point_data[var].to_dataframe().reset_index()
-                print(df)
+
                 # Index by time only
                 weather_data[var] = df[["time", var]].set_index("time")
         
