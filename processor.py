@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
-from aquacrop import AquaCropModel, Soil, Crop, InitialWaterContent, IrrigationManagement
+from aquacrop import AquaCropModel, Soil, Crop, IrrigationManagement
 
 
 class DataLoader:
@@ -28,7 +28,6 @@ class DataLoader:
         weather_data = {}
         
         for var, filepath in weather_files.items():
-            print('Filepath: ',filepath)
             with xr.open_dataset(filepath) as ds:
                 # Select nearest point (dims: time, latitude, longitude)
                 point_data = ds.sel(y=y, x=x, method="nearest")
@@ -297,6 +296,7 @@ def worker_run(
         }
         crop_name = crop_mapping[config['crop'].lower()]
         crop_obj = Crop(crop_name, planting_date='01/01')  # Default date
+        crop_obj.CalendarType = (1)  # Force calendar-day mode so CD parameter adjustments take effect
         
         # Adjust crop phenology
         crop_obj = CropAdjuster.adjust_crop_phenology(crop_obj, pheno_data)
@@ -309,6 +309,7 @@ def worker_run(
                 }]),
                 "daily": None
             }
+        
         
         # Set up irrigation
         irr_method = 1 if config['irrigation'].lower() == 'irrigated' else 0

@@ -87,7 +87,11 @@ def main():
         'end_date': '2011/12/31',
         'crop': 'maize',
         'irrigation': 'rainfed',
-        'initial_water_content': InitialWaterContent(['FC']),   # %
+        'initial_water_content': InitialWaterContent(
+            wc_type='Prop',
+            method='Depth',
+            depth_layer=[0, 2],
+            value=['FC', 'FC']),   # %
         'output_dir': '../../outputs'
     }
 
