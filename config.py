@@ -143,11 +143,11 @@ class InputValidator:
             'soil_100-200.nc': '100_200cm',
         }
     
-        # Build reference coord set once for alignment checks
-        ref_set = {
-            (round(lat, 6), round(lon, 6))
-            for lat, lon in zip(ref_coords['y'], ref_coords['x'])
-        }
+        # Build 1D reference coord sets once for alignment checks.
+        # ref_coords only contains cells inside the domain mask, so we compare
+        # the unique y and x values (grid alignment) rather than every cell pair.
+        ref_y = set(np.round(np.unique(ref_coords['y'].values), 6))
+        ref_x = set(np.round(np.unique(ref_coords['x'].values), 6))
     
         for filename in InputRequirements.SOIL_FILES:
             filepath = soil_path / filename
@@ -169,15 +169,13 @@ class InputValidator:
                     if missing_vars:
                         errors.append(f"{filename} missing variables: {missing_vars}")
     
-                    # Check spatial alignment against climate grid
-                    lats = ds['y'].values
-                    lons = ds['x'].values
-                    soil_coords = {
-                        (round(lat, 6), round(lon, 6))
-                        for lat in lats for lon in lons
-                    }
+                    # Check spatial alignment against climate grid.
+                    # The soil file retains the full bounding box (NaN outside mask),
+                    # so we check whether every ref coordinate is present in the soil grid.
+                    soil_y = set(np.round(ds['y'].values, 6))
+                    soil_x = set(np.round(ds['x'].values, 6))
     
-                    if not soil_coords.issubset(ref_set):
+                    if not (ref_y.issubset(soil_y) and ref_x.issubset(soil_x)):
                         warnings.warn(
                             f"Soil ({filename}) grid not exactly aligned with precipitation grid. "
                             f"Nearest-neighbour selection will be used at runtime."
@@ -236,18 +234,16 @@ class InputValidator:
                     if "x" not in ds.coords or "y" not in ds.coords:
                         errors.append(f"{filename} missing x/y coordinates")
                     else:
-                        pheno_lons = ds["x"].values
-                        pheno_lats = ds["y"].values
-                        pheno_coords = {
-                            (round(lat, 6), round(lon, 6))
-                            for lat in pheno_lats
-                            for lon in pheno_lons
-                        }
-                        ref_set = {
-                            (round(lat, 6), round(lon, 6))
-                            for lat, lon in zip(ref_coords["y"], ref_coords["x"])
-                        }
-                        if not pheno_coords.issubset(ref_set):
+                        # Compare 1D coordinate axes rather than every cell pair.
+                        # ref_coords only contains cells inside the domain mask, while the
+                        # phenology file retains the full bounding box (NaN outside mask),
+                        # so we check whether every ref coordinate is present in the pheno grid.
+                        ref_y = set(np.round(np.unique(ref_coords["y"].values), 6))
+                        ref_x = set(np.round(np.unique(ref_coords["x"].values), 6))
+                        pheno_y = set(np.round(ds["y"].values, 6))
+                        pheno_x = set(np.round(ds["x"].values, 6))
+                
+                        if not (ref_y.issubset(pheno_y) and ref_x.issubset(pheno_x)):
                             warnings.warn(
                                 f"Phenology ({filename}) grid not exactly aligned with precipitation grid. "
                                 f"Nearest-neighbour selection will be used at runtime."
