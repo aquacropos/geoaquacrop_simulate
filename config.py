@@ -65,6 +65,73 @@ class InputRequirements:
 
 class InputValidator:
     """Validate input files meet requirements."""
+    
+    @staticmethod
+    def validate_spam_data(
+        processed_path: Path,
+        start_year: int,
+        end_year: int,
+        crop: str,
+        irrigation: str,
+    ) -> Dict[str, str]:
+        """
+        Validate SPAM physical area NetCDF file.
+        Returns dict with filepath and the specific variable name for this crop+irrigation.
+        """
+        # Pick SPAM refyear (2010 or 2020) based on midpoint of simulation period.
+        # Matches the logic in preproc_tools.spam_refyear.
+        avg_year = np.ceil(np.mean([start_year, end_year]))
+        refyear = min([2010, 2020], key=lambda yr: abs(yr - avg_year))
+    
+        filename = f"spam{refyear}_physical_area.nc"
+        filepath = processed_path / filename
+    
+        if not filepath.exists():
+            raise ValueError(
+                f"Missing SPAM physical area file: {filepath}. "
+                f"Run preprocessing with 'crop_areas' step first."
+            )
+    
+        # Variable naming in preproc_spam: '{Crop}_{rf|ir}_physical_area'
+        crop_title = crop
+        irr_tag = "ir" if irrigation.lower() == "irrigated" else "rf"
+        var_name = f"{crop_title}_{irr_tag}_physical_area"
+    
+        try:
+            with xr.open_dataset(filepath) as ds:
+                # Try the exact seasonal name first (e.g. Wheat_summer_rf_physical_area,
+                # PaddyRice1_rf_physical_area)
+                var_name = f"{crop}_{irr_tag}_physical_area"
+            
+                if var_name not in ds.data_vars:
+                    # Build ordered list of fallbacks. SPAM has PaddyRice (no seasons) and
+                    # Wheat_summer only, so winter wheat generates warning.
+                    fallbacks = []
+                    if crop.startswith('PaddyRice'):
+                        fallbacks = ['PaddyRice']
+                    elif crop == 'Wheat_winter':
+                        fallbacks = ['Wheat']  # Wheat first in case of future SPAM releases
+            
+                    chosen = None
+                    for base in fallbacks:
+                        candidate = f"{base}_{irr_tag}_physical_area"
+                        if candidate in ds.data_vars:
+                            chosen = candidate
+                            break
+            
+                    if chosen is None:
+                        warnings.warn(
+                            f"{filename} missing '{var_name}' and no fallback available "
+                            f"for crop={crop}, irrigation={irrigation}. "
+                            f"Simulation will continue but 'production_tonnes' will be NaN "
+                            f"for all cells. Available variables: {list(ds.data_vars)}"
+                        )
+                        return {'filepath': str(filepath), 'variable': None}
+                    var_name = chosen
+        except Exception as e:
+            raise ValueError(f"Error reading {filename}: {str(e)}")
+    
+        return {'filepath': str(filepath), 'variable': var_name}
 
     @staticmethod
     # CHANGED: now takes start_year, end_year
@@ -294,7 +361,7 @@ class SimulationConfig:
         """Validate all configuration parameters."""
         # coord_file is no longer required – we derive coords from the weather grid
         required_keys = [
-            'weather_path', 'soil_path', 'pheno_path',
+            'weather_path', 'soil_path', 'pheno_path', 'spam_path',
             'start_date', 'end_date', 'crop', 'irrigation',
             'initial_water_content', 'output_dir'
         ]
@@ -304,7 +371,7 @@ class SimulationConfig:
             raise ValueError(f"Missing configuration keys: {missing_keys}")
         
         # Convert paths to Path objects
-        for key in ['weather_path', 'soil_path', 'pheno_path', 'output_dir']:
+        for key in ['weather_path', 'soil_path', 'pheno_path', 'spam_path', 'output_dir']:
             self.config[key] = Path(self.config[key])
         
         # Validate dates
@@ -375,11 +442,21 @@ class SimulationConfig:
             coords_df
         )
         
+        print("  Checking SPAM crop area data...")
+        spam_files = InputValidator.validate_spam_data(
+            self.config['spam_path'],
+            start_year,
+            end_year,
+            self.config['crop'],
+            self.config['irrigation'],
+        )
+        
         print("All input files validated successfully!")
         
         return {
             'coords': coords_df,
             'weather': weather_files,
             'soil': soil_files,
-            'phenology': pheno_files
+            'phenology': pheno_files,
+            'spam': spam_files
         }

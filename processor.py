@@ -23,6 +23,25 @@ class DataLoader:
     """Handle loading of standardized input data."""
     
     @staticmethod
+    def load_spam_area_for_point(spam_files: Dict[str, str], x: float, y: float) -> float:
+        """
+        Load SPAM physical area (hectares per grid cell) for a specific point.
+        Returns np.nan if no data is available or if SPAM lacks this crop.
+        """
+        var_name = spam_files.get('variable')
+        if var_name is None:
+            return np.nan  # No matching SPAM variable — production will be NaN
+    
+        filepath = spam_files['filepath']
+        with xr.open_dataset(filepath) as ds:
+            pt = ds[var_name].sel(x=x, y=y, method="nearest")
+            if 'band' in pt.dims:
+                pt = pt.max(dim='band', skipna=True)
+            value = float(pt.values)
+    
+        return value if not np.isnan(value) else np.nan
+    
+    @staticmethod
     def load_weather_for_point(weather_files: Dict[str, str], y: float, x: float, 
                               start_date: str, end_date: str) -> pd.DataFrame:
         """Load weather data for a specific point."""
@@ -347,6 +366,12 @@ def worker_run(
         # Get daily outputs
         water_flux = model._outputs.water_flux
         crop_growth = model._outputs.crop_growth
+        
+        # enrich final_stats outputs
+        crop_area_ha = crop_area_ha = DataLoader.load_spam_area_for_point(
+            validated_inputs['spam'], x, y
+        )
+            'crop_area_ha': crop_area_ha,
         
         logger.info(f"Cell {i}: Simulation completed successfully")
         
