@@ -60,7 +60,7 @@ class DataLoader:
         
         def _extract_soil_vars(path: str, x: float, y: float):
             ds = xr.open_dataset(path)
-            pt = ds.sel(x=x, y=y, method="nearest").isel(band=0)
+            pt = ds.sel(x=x, y=y, method="nearest")
             sand = float(pt["Sand"].values)
             clay = float(pt["Clay"].values)
             orgmat = float(pt["Som"].values)
