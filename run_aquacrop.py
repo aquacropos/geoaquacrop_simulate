@@ -86,6 +86,7 @@ def main():
         'start_date': '2010/01/01',
         'end_date': '2011/12/31',
         'crop': 'maize',
+        'spam_path': '../aquacropgrid-preproc/processed',
         'irrigation': 'rainfed',
         'initial_water_content': InitialWaterContent(
             wc_type='Prop',
