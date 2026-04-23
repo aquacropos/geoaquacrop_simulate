@@ -11,6 +11,7 @@ import datetime as dt
 import logging
 import pickle
 import concurrent.futures
+from tqdm import tqdm
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ProcessPoolExecutor
@@ -406,7 +407,13 @@ class ParallelProcessor:
                 futures.append(future)
             
             # Collect results
-            for future in concurrent.futures.as_completed(futures):
+            for future in tqdm(
+                    concurrent.futures.as_completed(futures),
+                    total=len(futures),
+                    desc="Simulating cells",
+                    unit="cell",
+                    smoothing=0.1,   # rolling-average smoothing of rate estimate
+                    ):
                 result = future.result()
                 summary_results.append(result['summary'])
                 daily_results.append(result['daily'])
