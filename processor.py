@@ -446,7 +446,7 @@ class ParallelProcessor:
                     concurrent.futures.as_completed(futures),
                     total=len(futures),
                     desc="Simulating cells",
-                    unit="cell",
+                    unit="cells",
                     smoothing=0.1,   # rolling-average smoothing of rate estimate
                     ):
                 result = future.result()
