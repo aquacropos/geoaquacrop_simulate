@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from aquacrop import AquaCropModel, Soil, Crop, IrrigationManagement
+from summary_enrichers import apply_all as apply_enrichers
 
 
 class DataLoader:
@@ -371,7 +372,15 @@ def worker_run(
         crop_area_ha = crop_area_ha = DataLoader.load_spam_area_for_point(
             validated_inputs['spam'], x, y
         )
+        context = {
             'crop_area_ha': crop_area_ha,
+            'crop_obj': crop_obj,
+            'daily': {'water_flux': water_flux, 'crop_growth': crop_growth},
+            'weather_df': weather_df,
+            'config': config,
+            'logger': logger,
+        }
+        final_stats = apply_enrichers(final_stats, context)
         
         logger.info(f"Cell {i}: Simulation completed successfully")
         
