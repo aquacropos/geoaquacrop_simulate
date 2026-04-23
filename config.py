@@ -107,21 +107,6 @@ class InputValidator:
             raise ValueError("Weather data validation failed:\n" + "\n".join(errors))
         
         return validated_files
-
-    # @staticmethod
-    # def _check_spatial_alignment(ref_coords: pd.DataFrame, raster_file: Path, label: str):
-    #     """Ensure raster grid aligns with reference coords_df from precipitation file."""
-    #     with rasterio.open(raster_file) as src:
-            
-    #         # Extract 1D arrays of lat/lon
-    #         lats = [src.xy(row, 0)[1] for row in range(src.height)]
-    #         lons = [src.xy(0, col)[0] for col in range(src.width)]
-
-    #         raster_coords = {(round(lat, 6), round(lon, 6)) for lat in lats for lon in lons}
-    #         ref_set = {(round(lat, 6), round(lon, 6)) for lat, lon in zip(ref_coords['lat'], ref_coords['lon'])}
-
-    #         if not raster_coords.issubset(ref_set):
-    #             raise ValueError(f"{label} grid does not align with precipitation grid")
     
     @staticmethod
     def validate_soil_data(soil_path: Path, ref_coords: pd.DataFrame) -> Dict[str, str]:
