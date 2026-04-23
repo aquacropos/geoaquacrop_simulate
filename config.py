@@ -57,7 +57,23 @@ class InputRequirements:
     }
     
     # Supported crops
-    CROPS = ['maize', 'wheat', 'soybean', 'rice']
+    CROPS = [
+        'Barley',
+        'Cassava',
+        'Cotton',
+        'DryBean',
+        'Maize',
+        'PaddyRice1',      # first rice season (from GGCMI) -> AquaCrop 'PaddyRice'
+        'PaddyRice2',      # second rice season (from GGCMI) -> AquaCrop 'PaddyRice'
+        'Potato',
+        'Sorghum',
+        'Soybean',
+        'SugarBeet',
+        'SugarCane',
+        'Sunflower',
+        'Wheat_summer',    # spring wheat (from GGCMI) -> AquaCrop 'Wheat'
+        'Wheat_winter',    # winter wheat (from GGCMI) -> AquaCrop 'Wheat'
+    ]
     
     # Irrigation types
     IRRIGATION_TYPES = ['irrigated', 'rainfed']
@@ -263,8 +279,7 @@ class InputValidator:
         validated_files = {}
         errors = []
 
-        crop_lower = crop.lower()
-        if crop_lower not in InputRequirements.CROPS:
+        if crop not in InputRequirements.CROPS:
             raise ValueError(
                 f"Unsupported crop: {crop}. Supported: {InputRequirements.CROPS}"
             )
@@ -305,7 +320,7 @@ class InputValidator:
                     # Variables look like:
                     #   Maize_rf_planting
                     #   Maize_rf_growing_season_length
-                    crop_title = crop_lower.capitalize()  # maize -> Maize, wheat -> Wheat
+                    crop_title = crop
 
                     planting_suffix = f"_{irr_tag}_planting"
 
@@ -385,8 +400,11 @@ class SimulationConfig:
                 raise ValueError(f"Invalid date for '{key}': '{self.config[key]}'. Use 'YYYY/MM/DD'")
         
         # Validate crop
-        if self.config['crop'].lower() not in InputRequirements.CROPS:
-            raise ValueError(f"Invalid crop: {self.config['crop']}")
+        if self.config['crop'] not in InputRequirements.CROPS:
+            raise ValueError(
+            f"Invalid crop: '{self.config['crop']}'. "
+            f"Supported crops (case-sensitive): {InputRequirements.CROPS}"
+        )
         
         # Validate irrigation
         if self.config['irrigation'].lower() not in InputRequirements.IRRIGATION_TYPES:

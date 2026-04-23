@@ -124,8 +124,7 @@ class DataLoader:
         
         # Map irrigation type to suffix used in variable names
         irr_tag = "ir" if irrigation.lower() == "irrigated" else "rf"
-        crop_lower = crop.lower()
-        crop_title = crop_lower.capitalize()  # maize -> Maize
+        crop_title = crop
         
         planting_suffix = f"_{irr_tag}_planting"
         
@@ -309,13 +308,13 @@ def worker_run(
         )
         
         # Initialize crop
-        crop_mapping = {
-            'maize': 'Maize',
-            'wheat': 'Wheat',
-            'soybean': 'Soybean',
-            'rice': 'PaddyRice'
-        }
-        crop_name = crop_mapping[config['crop'].lower()]
+        crop_name = config['crop']
+        if crop_name.startswith('Wheat_'): # adjust for GGCMI having 2 seasons
+            crop_name = 'Wheat'
+        elif crop_name.startswith('PaddyRice'):
+            crop_name = 'PaddyRice'
+        
+        
         crop_obj = Crop(crop_name, planting_date='01/01')  # Default date
         crop_obj.CalendarType = (1)  # Force calendar-day mode so CD parameter adjustments take effect
         
@@ -363,7 +362,7 @@ def worker_run(
         final_stats['crop'] = config['crop']
         final_stats['irrigation'] = config['irrigation']
         final_stats['planting_date'] = crop_obj.planting_date
-        
+                
         # Get daily outputs
         water_flux = model._outputs.water_flux
         crop_growth = model._outputs.crop_growth

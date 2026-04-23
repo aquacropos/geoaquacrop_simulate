@@ -79,6 +79,11 @@ def main():
     """
 
     # --- USER EDITS THESE VALUES ---
+    # Available crops (must match exact case-sensitive spelling):
+    #   Barley, Cassava, Cotton, DryBean, Maize, Potato, Sorghum, Soybean,
+    #   SugarBeet, SugarCane, Sunflower
+    #   PaddyRice1, PaddyRice2           (first / second rice season)
+    #   Wheat_summer, Wheat_winter       (spring-sown / autumn-sown wheat)
     config_dict = {
         'weather_path': '../../aquacropgrid-preproc-main/aquacropgrid-preproc-main/processed',
         'soil_path': '../../aquacropgrid-preproc-main/aquacropgrid-preproc-main/processed',
