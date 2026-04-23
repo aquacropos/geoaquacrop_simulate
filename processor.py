@@ -68,7 +68,9 @@ class DataLoader:
 
         # Rename time column only
         weather_df = weather_df.rename(columns={"time": "Date"})
-
+        
+        # Force a floor of 0.01 for ReferenceET to protect against divide by 0
+        weather_df["ReferenceET"] = weather_df["ReferenceET"].clip(lower=0.01)
         
         # Ensure correct column order
         weather_df = weather_df[["MinTemp", "MaxTemp", "Precipitation", "ReferenceET", "Date"]]
