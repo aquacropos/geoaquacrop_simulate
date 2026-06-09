@@ -2,14 +2,14 @@
 # ║                        USER CONFIGURATION                                  ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
-SUMMARY_PKL   = '../outputs/summary_results_20260501_144727.pkl'    # simulation output files
-DAILY_PKL     = '../outputs/daily_results_20260501_144727.pkl'
-GEOJSON_PATH  = '../aquacropgrid-preproc/inputdata/germany/niedersachsen.geojson'  # polygon input file (area of interest)
-PROCESSED_DIR = '../aquacropgrid-preproc/processed'    # preprocessing outputs (climate, soil, phenology, crop areas)
-EXPORT_DIR    = '../outputs/exports'    # location to save data files via export function in visualisation (NetCDF, GeoTIFF, CSV) 
+SUMMARY_PKL   = '../high_plains_package/outputs/summary_results_20260521_191549.pkl'    # simulation output files
+DAILY_PKL     = '../high_plains_package/outputs/daily_results_20260521_191549.pkl'
+GEOJSON_PATH  = '../high_plains_package/inputdata/high_plains/high_plains.geojson'  # polygon input file (area of interest)
+PROCESSED_DIR = '../high_plains_package/processed'    # preprocessing outputs (climate, soil, phenology, crop areas)
+EXPORT_DIR    = '../high_plains_package/outputs/exports'    # location to save data files via export function in visualisation (NetCDF, GeoTIFF, CSV)
 CELL_RES      = 0.05 # same as the preprocessing grid resolution in degrees
 PORT          = 8050
-MAP_ZOOM      = 10
+# MAP_ZOOM      = 10
 MAP_HEIGHT    = 550
 TS_HEIGHT     = 400
 
@@ -42,16 +42,16 @@ DAILY_VARIABLES = {
     'Wr':           {'label': 'Water in Root Zone (mm)',             'table': 'water_flux',  'color': '#2c3e50'},
     'biomass':      {'label': 'Biomass (tonne/ha)',                  'table': 'crop_growth', 'color': '#27ae60'},
     'canopy_cover': {'label': 'Canopy Cover (-)',                    'table': 'crop_growth', 'color': '#2ecc71'},
-    'gdd_cum':      {'label': 'Cumulative GDD',                     'table': 'crop_growth', 'color': '#d35400'},
+    'gdd_cum':      {'label': 'Cumulative GDD (°C·day)',            'table': 'crop_growth', 'color': '#d35400'},
     'z_root':       {'label': 'Root Depth (m)',                     'table': 'crop_growth', 'color': '#795548'},
-    'DryYield':     {'label': 'Dry Yield (tonne/ha)',               'table': 'crop_growth', 'color': '#c0392b'},
+    'DryYield':     {'label': 'Dry Yield (t/ha)',                   'table': 'crop_growth', 'color': '#c0392b'},
 }
 
 CLIMATE_VARIABLES = {
-    'MaxTemp':       {'label': 'Max Temperature (°C)',    'color': '#e74c3c', 'colorscale': 'RdYlBu_r'},
-    'MinTemp':       {'label': 'Min Temperature (°C)',    'color': '#3498db', 'colorscale': 'RdYlBu_r'},
-    'Precipitation': {'label': 'Precipitation (mm/day)', 'color': '#2980b9', 'colorscale': 'Blues'   },
-    'ReferenceET':   {'label': 'Reference ET (mm/day)',  'color': '#e67e22', 'colorscale': 'YlOrBr'  },
+    'MaxTemp':       {'label': 'Max Temperature (°C)',    'map_label': 'Max Temperature (°C)',    'unit': '°C',      'color': '#e74c3c', 'colorscale': 'RdYlBu_r'},
+    'MinTemp':       {'label': 'Min Temperature (°C)',    'map_label': 'Min Temperature (°C)',    'unit': '°C',      'color': '#3498db', 'colorscale': 'RdYlBu_r'},
+    'Precipitation': {'label': 'Precipitation (mm/day)', 'map_label': 'Precipitation (mm/year)', 'unit': 'mm/year', 'color': '#2980b9', 'colorscale': 'Blues'   },
+    'ReferenceET':   {'label': 'Reference ET (mm/day)',  'map_label': 'Reference ET (mm/year)',  'unit': 'mm/year', 'color': '#e67e22', 'colorscale': 'YlOrBr'  },
 }
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -64,6 +64,7 @@ CLIMATE_VARIABLES = {
 # xarray      — NetCDF handling
 # plotly      — pip install plotly
 # dash        — pip install dash
+# dash_bootstrap_components — pip install dash-bootstrap-components
 # rasterio    — pip install rasterio  (for GeoTIFF export)
 # json        — built-in
 
@@ -74,9 +75,12 @@ import numpy as np
 import xarray as xr
 import plotly.graph_objects as go
 import dash
-from dash import dcc, html, Input, Output, State, ctx, ALL
+from dash import dcc, html, Input, Output, State, ctx, ALL, Patch
 import json
 import glob
+import copy
+import math
+import dash_bootstrap_components as dbc
 
 os.makedirs(EXPORT_DIR, exist_ok=True)
 
@@ -107,10 +111,13 @@ with open(DAILY_PKL, 'rb') as f:
 cell_meta      = {}
 cell_id_to_idx = {}
 
+
 for i, df in enumerate(summary_raw):
-    if not isinstance(df, pd.DataFrame) or df.empty or 'cell_id' not in df.columns or 'error' in df.columns:
+    if not isinstance(df, pd.DataFrame) or df.empty or 'cell_id' not in df.columns:
         continue
     row = df.iloc[0]
+    if pd.notna(row.get('error', None)):
+        continue
     cid = int(row['cell_id'])
     cell_meta[cid] = {
         'x':          float(row['x']),
@@ -120,6 +127,14 @@ for i, df in enumerate(summary_raw):
         'list_idx':   i,
     }
     cell_id_to_idx[cid] = i
+
+
+# Precomputed arrays for vectorized xarray lookups (built once, reused everywhere)
+_cell_ids_arr = np.array(list(cell_meta.keys()), dtype=int)
+_cell_xs_arr  = np.array([cell_meta[c]['x'] for c in _cell_ids_arr])
+_cell_ys_arr  = np.array([cell_meta[c]['y'] for c in _cell_ids_arr])
+_x_da = xr.DataArray(_cell_xs_arr, dims='pts')
+_y_da = xr.DataArray(_cell_ys_arr, dims='pts')
 
 crop_irr_list    = sorted(summary['crop_irr'].dropna().unique())
 season_list      = sorted(summary['season_label'].dropna().unique())
@@ -134,7 +149,6 @@ sim_end            = sim_start + pd.to_timedelta(len(daily_raw[0]['water_flux'])
 
 n_rows     = len(daily_raw[0]['water_flux'])
 date_index = pd.date_range(start=sim_start, periods=n_rows, freq='D')
-#years      = sorted(date_index.year.unique())
 years = [yr for yr in sorted(date_index.year.unique())
          if (date_index.year == yr).sum() > 5]
 
@@ -147,11 +161,21 @@ wf0 = daily_raw[0]['water_flux'].reset_index(drop=True)
 preseason_end_row  = int(wf0[wf0['season_counter'] == -1.0].index.max())
 preseason_end_date = sim_start + pd.to_timedelta(preseason_end_row, unit='D')
 
+
+sim_year_start = years[0]
+sim_year_end   = years[-1]
+year_suffix    = f'{sim_year_start}{sim_year_end}'
+
 climate_ds = {}
 for var in climate_var_keys:
-    matches = glob.glob(os.path.join(PROCESSED_DIR, f'{var}*.nc'))
-    if matches:
-        climate_ds[var] = xr.open_dataset(matches[0])
+    path = os.path.join(PROCESSED_DIR, f'{var}{year_suffix}.nc')
+    if os.path.exists(path):
+        climate_ds[var] = xr.open_dataset(path)
+    else:
+        # Fallback: glob if exact filename not found
+        matches = glob.glob(os.path.join(PROCESSED_DIR, f'{var}*.nc'))
+        if matches:
+            climate_ds[var] = xr.open_dataset(matches[0])
 
 cropcal_ds = xr.open_dataset(os.path.join(PROCESSED_DIR, 'cropcalendar.nc'),
                              decode_timedelta=True)
@@ -159,7 +183,7 @@ cropcal_ds = xr.open_dataset(os.path.join(PROCESSED_DIR, 'cropcalendar.nc'),
 # ── SPAM: load and keep only variables with data ───────────────────────────────
 spam_files = glob.glob(os.path.join(PROCESSED_DIR, 'spam*_physical_area.nc'))
 spam_path  = spam_files[0] if spam_files else None
-spam_ds   = xr.open_dataset(spam_path) if os.path.exists(spam_path) else None
+spam_ds = xr.open_dataset(spam_path) if spam_path and os.path.exists(spam_path) else None
 
 spam_var_keys = []  # all SPAM vars with data
 if spam_ds is not None:
@@ -177,7 +201,7 @@ def spam_vars_for_crop(crop_irr):
     exact     = f'{crop_name}_{irr_code}_physical_area'
     if exact in spam_var_keys:
         return [exact]
-    return []  # no data for this crop/irrigation combination
+    return []  
 
 # ── Crop calendar helper ───────────────────────────────────────────────────────
 IRR_MAP = {'rainfed': 'rf', 'irrigated': 'ir'}
@@ -244,10 +268,29 @@ grid_geojson = {
         for _, row in cells.iterrows()
     ]
 }
-#all_cell_ids = [str(int(c)) for c in cells['cell_id'].unique()]
 all_cell_ids = [str(cid) for cid in cell_meta.keys()]
 center_lat   = summary['y'].mean()
 center_lon   = summary['x'].mean()
+
+
+def get_auto_zoom(min_lon, max_lon, min_lat, max_lat,
+                  map_width_px=1300, map_height_px=MAP_HEIGHT):
+    lon_span = max_lon - min_lon
+    lat_span = max_lat - min_lat
+    if lon_span == 0 or lat_span == 0:
+        return 8.5
+    zoom_lon = math.log2(360 * map_width_px  / (256 * lon_span))
+    zoom_lat = math.log2(180 * map_height_px / (256 * lat_span))
+    return round(min(zoom_lon, zoom_lat) - 0.5, 1)
+
+min_lon  = min(m['x'] for m in cell_meta.values()) - half
+max_lon  = max(m['x'] for m in cell_meta.values()) + half
+min_lat  = min(m['y'] for m in cell_meta.values()) - half
+max_lat  = max(m['y'] for m in cell_meta.values()) + half
+MAP_ZOOM = get_auto_zoom(min_lon, max_lon, min_lat, max_lat)
+print(f"Auto zoom: {MAP_ZOOM}")
+
+
 
 crop_var_range = {}
 for ci in crop_irr_list:
@@ -260,18 +303,39 @@ for ci in crop_irr_list:
         else:
             crop_var_range[ci][var] = (sub.min(), sub.max())
 
-crop_var_range_all = {}
+
+# ── Pre-compute all aggregations at startup ───────────────────────────────────
+crop_var_range_all  = {}  # (ci, var, agg) → (vmin, vmax)
+precomputed_agg     = {}  # (ci, var, agg) → DataFrame with cell_id + var columns
+
 for ci in crop_irr_list:
     crop_var_range_all[ci] = {}
+    sub_ci = summary[summary['crop_irr'] == ci]
+
     for var in map_var_keys:
+        if var not in sub_ci.columns:
+            continue
+        grouped = sub_ci.groupby('cell_id')[var]
+
         for agg in ['mean', 'sum']:
-            grouped  = summary[summary['crop_irr'] == ci].groupby('cell_id')[var]
             agg_vals = grouped.sum() if agg == 'sum' else grouped.mean()
+
+            # Store colorbar range
             if var == 'Seasonal irrigation (mm)':
                 vmax = agg_vals.max() if agg_vals.max() > 0 else 1
                 crop_var_range_all[ci][f'{var}_{agg}'] = (0, vmax)
             else:
                 crop_var_range_all[ci][f'{var}_{agg}'] = (agg_vals.min(), agg_vals.max())
+
+            # Store aggregated values per cell as a DataFrame
+            agg_df = agg_vals.reset_index()
+            agg_df.columns = ['cell_id', var]
+            agg_df = agg_df.merge(
+                summary[['cell_id', 'x', 'y', 'crop', 'irrigation']].drop_duplicates('cell_id'),
+                on='cell_id'
+            )
+            precomputed_agg[(ci, var, agg)] = agg_df
+
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║                        HELPERS                                             ║
@@ -310,13 +374,13 @@ def get_cropcal_values(var_name, x, y):
         return None
     return float(cropcal_ds[var_name].sel(x=x, y=y, method='nearest').values)
 
+
 def mapbox_layers():
     return [
         dict(sourcetype='raster',
              source=['https://server.arcgisonline.com/ArcGIS/rest/services/'
                      'World_Topo_Map/MapServer/tile/{z}/{y}/{x}'],
              below='traces'),
-        dict(source=region_geojson, type='fill', color='rgba(26,111,175,0.06)'),
         dict(source=region_geojson, type='line', color='#1a6faf', line=dict(width=2.5)),
     ]
 
@@ -467,14 +531,10 @@ def build_output_map(ci, season, map_var, agg_override,
     agg_func = agg_override if agg_override in ['mean', 'sum'] else var_info['default_agg']
 
     if season == 'all':
-        grouped   = summary[summary['crop_irr'] == ci].groupby('cell_id')[map_var]
-        agg_vals  = grouped.sum() if agg_func == 'sum' else grouped.mean()
-        agg_df    = agg_vals.reset_index()
-        agg_df.columns = ['cell_id', map_var]
-        agg_df    = agg_df.merge(
-            summary[['cell_id', 'x', 'y', 'crop', 'irrigation']].drop_duplicates('cell_id'),
-            on='cell_id')
-        subset    = agg_df.copy()
+        subset    = precomputed_agg.get((ci, map_var, agg_func))
+        if subset is None:
+            return go.Figure()
+        subset    = subset.copy()
         agg_label = f"{'Sum' if agg_func == 'sum' else 'Avg'} all years"
         vmin, vmax = crop_var_range_all[ci][f'{map_var}_{agg_func}']
     else:
@@ -484,17 +544,15 @@ def build_output_map(ci, season, map_var, agg_override,
 
     subset['cell_id_str'] = subset['cell_id'].astype(int).astype(str)
 
-    hover_texts = []
-    for _, row in subset.iterrows():
-        hover_texts.append(
-            f"<b>Cell {int(row.cell_id)}</b><br>"
-            f"Lon: {row.x:.3f} | Lat: {row.y:.3f}<br>"
-            f"Crop: {row.crop.capitalize()} ({row.irrigation})<br>"
-            f"Period: {agg_label}<br>"
-            f"──────────────────<br>"
-            f"{var_info['label']}: {row[map_var]:.3f}<br>"
-            f"<i>Click to view time series</i>"
-        )
+    hover_texts = (
+        '<b>Cell ' + subset['cell_id'].astype(int).astype(str) + '</b><br>'
+        + 'Lon: ' + subset['x'].map('{:.3f}'.format) + ' | Lat: ' + subset['y'].map('{:.3f}'.format) + '<br>'
+        + 'Crop: ' + subset['crop'].str.capitalize() + ' (' + subset['irrigation'] + ')<br>'
+        + f'Period: {agg_label}<br>'
+        + '──────────────────<br>'
+        + var_info['label'] + ': ' + subset[map_var].map('{:.3f}'.format) + '<br>'
+        + '<i>Click to view time series</i>'
+    ).tolist()
 
     sel_locations = [str(sel_cell)] if sel_cell is not None else []
     sel_z         = [1] if sel_cell is not None else []
@@ -516,10 +574,16 @@ def build_output_map(ci, season, map_var, agg_override,
             geojson=grid_geojson, locations=subset['cell_id_str'],
             z=subset[map_var], zmin=vmin, zmax=vmax,
             colorscale=var_info['sum_colorscale'] if agg_func == 'sum' else var_info['colorscale'],
-            marker_opacity=0.78, marker_line_width=0.8, marker_line_color='white',
+            marker_opacity=0.95, marker_line_width=0.8, marker_line_color='white',
             colorbar=dict(
-                title=dict(text=f"{var_info['label']}<br>({agg_label})", font=dict(size=11)),
-                thickness=16, len=0.55, x=1.01,
+                title=dict(text=f"{var_info['label']}<br>({agg_label})",
+                           font=dict(size=11, family='Arial, system-ui, sans-serif')),
+                thickness=14, len=0.38,
+                x=0.98, xanchor='right',
+                y=0.02, yanchor='bottom',
+                bgcolor='rgba(255,255,255,0.88)',
+                bordercolor='rgba(0,0,0,0.12)', borderwidth=1,
+                tickfont=dict(family='Arial, system-ui, sans-serif', size=10),
             ),
             text=hover_texts,
             hovertemplate='%{text}<extra></extra>',
@@ -572,6 +636,17 @@ def build_output_map(ci, season, map_var, agg_override,
             mapbox=mapbox,
             margin=dict(l=0, r=0, t=0, b=0),
             height=MAP_HEIGHT, paper_bgcolor='white', uirevision='constant',
+            font=dict(family='Arial, system-ui, sans-serif'),
+            annotations=[
+                dict(x=0.016, y=0.100, xref='paper', yref='paper',
+                     text='↑', font=dict(size=26, color='#2c3e50', family='Arial'),
+                     showarrow=False, align='center'),
+                dict(x=0.016, y=0.048, xref='paper', yref='paper',
+                     text='N', font=dict(size=12, color='#2c3e50', family='Arial'),
+                     showarrow=False, align='center',
+                     bgcolor='rgba(255,255,255,0.82)',
+                     bordercolor='rgba(0,0,0,0.10)', borderpad=4, borderwidth=1),
+            ],
         )
     )
 
@@ -651,17 +726,12 @@ def build_input_map(climate_var, season_label, sel_cell=None, relayout_data=None
     if arr is None:
         return go.Figure()
 
-    locations, z_vals, hover_texts = [], [], []
-    for cid, meta in cell_meta.items():
-        val = float(arr.sel(x=meta['x'], y=meta['y'], method='nearest').values)
-        locations.append(str(cid))
-        z_vals.append(val)
-        hover_texts.append(
-            f"<b>Cell {cid}</b><br>"
-            f"Lon: {meta['x']:.3f} | Lat: {meta['y']:.3f}<br>"
-            f"{var_info['label']}: {val:.3f}<br>"
-            f"<i>Click to view time series</i>"
-        )
+    z_vals      = arr.sel(x=_x_da, y=_y_da, method='nearest').values.tolist()
+    locations   = [str(int(c)) for c in _cell_ids_arr]
+    hover_texts = [
+        f"<b>Cell {cid}</b><br>Lon: {cell_meta[cid]['x']:.3f} | Lat: {cell_meta[cid]['y']:.3f}<br>{var_info['map_label']}: {val:.3f} {var_info['unit']}<br><i>Click to view time series</i>"
+        for cid, val in zip(_cell_ids_arr.tolist(), z_vals)
+    ]
 
     vmin = min(z_vals)
     vmax = max(z_vals)
@@ -683,9 +753,9 @@ def build_input_map(climate_var, season_label, sel_cell=None, relayout_data=None
             geojson=grid_geojson, locations=locations,
             z=z_vals, zmin=vmin, zmax=vmax,
             colorscale=var_info['colorscale'],
-            marker_opacity=0.78, marker_line_width=0.8, marker_line_color='white',
+            marker_opacity=0.95, marker_line_width=0.8, marker_line_color='white',
             colorbar=dict(
-                title=dict(text=f"{var_info['label']}<br>({period_label})", font=dict(size=11)),
+                title=dict(text=f"{var_info['unit']}<br>({period_label})", font=dict(size=11)),
                 thickness=16, len=0.55, x=1.01,
             ),
             text=hover_texts,
@@ -719,28 +789,23 @@ def build_input_map(climate_var, season_label, sel_cell=None, relayout_data=None
         layout=go.Layout(
             mapbox=mapbox,
             margin=dict(l=0, r=0, t=0, b=0),
-            height=MAP_HEIGHT, paper_bgcolor='white', uirevision=f'{climate_var}-{season_label}',
+            height=MAP_HEIGHT, paper_bgcolor='white', uirevision='constant',
         )
     )
-
 
 def build_spam_map(spam_var, sel_cell=None, relayout_data=None):
     if spam_ds is None or spam_var not in spam_ds.data_vars:
         return go.Figure()
 
-    locations, z_vals, hover_texts = [], [], []
-    for cid, meta in cell_meta.items():
-        val = float(spam_ds[spam_var].sel(x=meta['x'], y=meta['y'], method='nearest').values)
-        if np.isnan(val):
-            val = 0.0
-        locations.append(str(cid))
-        z_vals.append(val)
-        label = spam_var.replace('_physical_area', '').replace('_', ' ')
-        hover_texts.append(
-            f"<b>Cell {cid}</b><br>"
-            f"Lon: {meta['x']:.3f} | Lat: {meta['y']:.3f}<br>"
-            f"{label}: {val:.2f} ha"
-        )
+    label       = spam_var.replace('_physical_area', '').replace('_', ' ')
+    z_raw       = spam_ds[spam_var].sel(x=_x_da, y=_y_da, method='nearest').values
+    z_arr       = np.where(np.isnan(z_raw), 0.0, z_raw)
+    z_vals      = z_arr.tolist()
+    locations   = [str(int(c)) for c in _cell_ids_arr]
+    hover_texts = [
+        f"<b>Cell {cid}</b><br>Lon: {cell_meta[cid]['x']:.3f} | Lat: {cell_meta[cid]['y']:.3f}<br>{label}: {val:.2f} ha"
+        for cid, val in zip(_cell_ids_arr.tolist(), z_vals)
+    ]
 
     vmin = 0
     vmax = max(z_vals) if max(z_vals) > 0 else 1
@@ -760,12 +825,16 @@ def build_spam_map(spam_var, sel_cell=None, relayout_data=None):
             geojson=grid_geojson, locations=locations,
             z=z_vals, zmin=vmin, zmax=vmax,
             colorscale='YlGn',
-            marker_opacity=0.78, marker_line_width=0.8, marker_line_color='white',
+            marker_opacity=0.95, marker_line_width=0.8, marker_line_color='white',
             colorbar=dict(
-                title=dict(
-                    text=spam_var.replace('_physical_area', '').replace('_', ' ') + '<br>(ha)',
-                    font=dict(size=11)),
-                thickness=16, len=0.55, x=1.01,
+                title=dict(text=label + '<br>(ha)',
+                           font=dict(size=11, family='Arial, system-ui, sans-serif')),
+                thickness=14, len=0.38,
+                x=0.98, xanchor='right',
+                y=0.02, yanchor='bottom',
+                bgcolor='rgba(255,255,255,0.88)',
+                bordercolor='rgba(0,0,0,0.12)', borderwidth=1,
+                tickfont=dict(family='Arial, system-ui, sans-serif', size=10),
             ),
             text=hover_texts,
             hovertemplate='%{text}<extra></extra>',
@@ -799,6 +868,7 @@ def build_spam_map(spam_var, sel_cell=None, relayout_data=None):
             mapbox=mapbox,
             margin=dict(l=0, r=0, t=0, b=0),
             height=MAP_HEIGHT, paper_bgcolor='white', uirevision='constant-spam',
+            font=dict(family='Arial, system-ui, sans-serif'),
         )
     )
 
@@ -942,12 +1012,12 @@ def _add_mean_std_band(fig, df_plot, var_col, color, year_start, year_end, ts_cl
     return fig
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║                        BUTTON STYLES                                       ║
+# ║                        BUTTON STYLES (retained for period buttons)         ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 def btn_style(active, color):
     palette = {
-        'blue':   ('#1a6faf', '#e8f0fb'),
+        'blue':   ('#3d5a8a', '#eef2f7'),
         'green':  ('#4caf50', '#e8f4ea'),
         'orange': ('#e65100', '#fff3e0'),
         'purple': ('#6a1b9a', '#f3e5f5'),
@@ -956,19 +1026,12 @@ def btn_style(active, color):
     }
     border, bg = palette[color]
     base = dict(padding='5px 13px', margin='2px', borderRadius='4px',
-                cursor='pointer', fontSize='12px', fontFamily='Arial',
+                cursor='pointer', fontSize='12px',
+                fontFamily='Arial, system-ui, sans-serif',
                 border=f'1px solid {border}')
     if active:
         return {**base, 'backgroundColor': border, 'color': 'white'}
     return {**base, 'backgroundColor': bg, 'color': '#333'}
-
-def label_style():
-    return {'fontFamily': 'Arial', 'fontWeight': 'bold',
-            'marginRight': '6px', 'fontSize': '13px'}
-
-def row_style(mb='5px'):
-    return {'textAlign': 'center', 'marginBottom': mb,
-            'maxWidth': '1300px', 'margin': f'0 auto {mb}'}
 
 def dd_style(w='80px'):
     return {'display': 'inline-block', 'width': w,
@@ -976,243 +1039,587 @@ def dd_style(w='80px'):
             'verticalAlign': 'middle'}
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║                        STYLE CONSTANTS                                     ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+
+FONT_STACK  = 'Arial, system-ui, -apple-system, sans-serif'
+ACCENT      = '#3d5a8a'
+SIDEBAR_BG  = '#f8f9fa'
+
+SIDEBAR_STYLE = {
+    'backgroundColor': SIDEBAR_BG,
+    'borderRight': '1px solid #dee2e6',
+    'padding': '14px 12px 80px',
+    'minHeight': '100vh',
+    'overflowY': 'auto',
+    'fontFamily': FONT_STACK,
+    'position': 'relative',
+}
+
+RIBBON_STYLE = {
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'space-between',
+    'backgroundColor': '#edf2f7',
+    'padding': '6px 14px',
+    'borderTop': '1px solid #dee2e6',
+    'borderBottom': '1px solid #dee2e6',
+    'fontFamily': FONT_STACK,
+    'fontSize': '12px',
+    'color': '#4a5568',
+    'minHeight': '38px',
+}
+
+DD_CTRL_STYLE = {'fontFamily': FONT_STACK, 'fontSize': '12px', 'marginBottom': '8px'}
+
+def _sec_hdr(text):
+    return html.Div(text, style={
+        'fontFamily': FONT_STACK, 'fontSize': '10px', 'fontWeight': '700',
+        'color': '#7a8a9a', 'letterSpacing': '1.2px', 'textTransform': 'uppercase',
+        'margin': '12px 0 4px',
+    })
+
+def _ctrl_label(text):
+    return html.Label(text, style={
+        'fontFamily': FONT_STACK, 'fontSize': '11px', 'fontWeight': '600',
+        'color': '#4a5568', 'marginBottom': '2px', 'display': 'block',
+    })
+
+# ── Variable group membership ─────────────────────────────────────────────────
+_YIELD_VARS = ['Dry yield (tonne/ha)', 'Fresh yield (tonne/ha)',
+               'Yield potential (tonne/ha)', 'production_tonnes']
+_WATER_VARS = ['Seasonal irrigation (mm)', 'seasonal_precip_mm',
+               'seasonal_et_mm', 'seasonal_transpiration_mm', 'total_water_input_mm']
+_WP_VARS    = ['wp_et_kg_per_m3', 'rainfall_use_efficiency_kg_per_m3']
+_FLUX_VARS  = ['Es', 'EsPot', 'Tr', 'TrPot', 'Infl', 'Runoff', 'DeepPerc']
+_SOIL_VARS  = ['Wr']
+_CROP_VARS  = ['biomass', 'canopy_cover', 'gdd_cum', 'z_root', 'DryYield']
+
+def _map_dd_opts(keys):
+    return [{'label': MAP_VARIABLES[v]['label'], 'value': v}
+            for v in keys if v in MAP_VARIABLES]
+
+def _daily_dd_opts(keys):
+    return [{'label': DAILY_VARIABLES[v]['label'], 'value': v}
+            for v in keys if v in DAILY_VARIABLES]
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║                        APP LAYOUT                                          ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
-app = dash.Dash(__name__)
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
-app.layout = html.Div([
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>AquaCrop Gridded Explorer</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            /* ── Accordion header base ─────────────────────────────────── */
+            .accordion-button {
+                padding-left: 25px !important;
+                font-family: Arial, system-ui, sans-serif !important;
+                font-size: 12px !important;
+                font-weight: 600 !important;
+                background-color: #f8f9fa !important;
+                box-shadow: none !important;
+                border: none !important;
+            }
+            /* Remove the default SVG chevron that can render as '*' and
+               replace with a clean Unicode arrow instead */
+            .accordion-button::after {
+                background-image: none !important;
+                content: '▾' !important;
+                font-size: 13px !important;
+                line-height: 1 !important;
+                width: auto !important;
+                height: auto !important;
+                transform: none !important;
+                transition: none !important;
+                color: inherit !important;
+            }
+            .accordion-button.collapsed::after {
+                content: '▸' !important;
+                transform: none !important;
+            }
+            /* Expanded header: dark navy + bold */
+            .accordion-button:not(.collapsed) {
+                color: #1e3a5f !important;
+                font-weight: 700 !important;
+                background-color: #eef2f7 !important;
+            }
+            /* Collapsed header: muted gray */
+            .accordion-button.collapsed {
+                color: #6c757d !important;
+            }
+            /* Tighten accordion body padding */
+            .accordion-body {
+                padding: 5px 10px 7px !important;
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
 
-    html.H2('AquaCrop Gridded Explorer',
-            style={'textAlign': 'center', 'fontFamily': 'Arial', 'marginBottom': '8px'}),
+app.layout = dbc.Container(fluid=True, style={'fontFamily': FONT_STACK, 'padding': '0'}, children=[
 
-    # ── Tab toggle ─────────────────────────────────────────────────────────────
-    html.Div([
-        html.Button('Simulation Outputs', id={'type': 'tab-btn', 'index': 'output'}, n_clicks=0,
-                    style=btn_style(True, 'blue')),
-        html.Button('Inputs',             id={'type': 'tab-btn', 'index': 'input'},  n_clicks=0,
-                    style=btn_style(False, 'red')),
-    ], style={'textAlign': 'center', 'marginBottom': '10px'}),
+    dbc.Row(className='g-0', children=[
 
-    # ── Shared: Crop buttons ───────────────────────────────────────────────────
-    html.Div([
-        html.Span('Crop & Irrigation:', style=label_style()),
-        *[html.Button(ci, id={'type': 'crop-btn', 'index': ci}, n_clicks=0,
-                      style=btn_style(ci == crop_irr_list[0], 'blue'))
-          for ci in crop_irr_list],
-    ], style=row_style('5px')),
+        # ══════════════════════════════════════════════════════════════════════
+        # LEFT SIDEBAR
+        # ══════════════════════════════════════════════════════════════════════
+        dbc.Col(width=3, style=SIDEBAR_STYLE, children=[
 
-    # ── Shared: Season buttons ─────────────────────────────────────────────────
-    html.Div([
-        html.Span('Season:', style=label_style()),
-        *[html.Button(s, id={'type': 'season-btn', 'index': s}, n_clicks=0,
-                      style=btn_style(s == season_list[0], 'green'))
-          for s in season_list],
-        html.Button('All years', id={'type': 'season-btn', 'index': 'all'}, n_clicks=0,
-                    style=btn_style(False, 'teal')),
-    ], style=row_style('5px')),
+            html.H5('AquaCrop Gridded Explorer', style={
+                'fontFamily': FONT_STACK, 'fontWeight': '700',
+                'color': '#2c3e50', 'marginBottom': '12px', 'fontSize': '15px',
+            }),
 
-    # ── Aggregation row (output tab, all years only) ───────────────────────────
-    html.Div(
-        id='agg-row',
-        children=[
-            html.Span('Aggregation:', style=label_style()),
-            html.Button('Mean', id={'type': 'agg-btn', 'index': 'mean'}, n_clicks=0,
-                        style=btn_style(True, 'teal')),
-            html.Button('Sum',  id={'type': 'agg-btn', 'index': 'sum'},  n_clicks=0,
-                        style=btn_style(False, 'teal')),
-        ],
-        style={'textAlign': 'center', 'maxWidth': '1300px',
-               'margin': '0 auto 5px', 'display': 'none'},
-    ),
-
-    # ── Output tab controls ────────────────────────────────────────────────────
-    html.Div(id='output-controls', children=[
-        html.Div([
-            html.Span('Map variable:', style=label_style()),
-            *[html.Button(MAP_VARIABLES[v]['label'],
-                          id={'type': 'mapvar-btn', 'index': v}, n_clicks=0,
-                          style=btn_style(v == map_var_keys[0], 'orange'))
-              for v in map_var_keys],
-        ], style=row_style('5px')),
-        html.Div([
-            html.Span('Daily variable:', style=label_style()),
-            *[html.Button(DAILY_VARIABLES[v]['label'],
-                          id={'type': 'dailyvar-btn', 'index': v}, n_clicks=0,
-                          style=btn_style(v == daily_var_keys[0], 'purple'))
-              for v in daily_var_keys],
-        ], style=row_style('12px')),
-    ]),
-
-
-    # ── Input tab controls ─────────────────────────────────────────────────────
-    html.Div(id='input-controls', children=[
-        html.Div([
-            html.Span('Climate variable:', style=label_style()),
-            *[html.Button(CLIMATE_VARIABLES[v]['label'],
-                          id={'type': 'climvar-btn', 'index': v}, n_clicks=0,
-                          style=btn_style(v == climate_var_keys[0], 'red'))
-              for v in climate_var_keys],
-        ], style=row_style('5px')),
-        html.Div(id='spam-btn-row', children=[
-            html.Span('Crop area (SPAM):', style=label_style()),
-            html.Span(id='spam-btn-container', children=[]),
-        ], style=row_style('12px')),
-    ], style={'display': 'none'}),
-
-    # ── Output panel ───────────────────────────────────────────────────────────
-    html.Div(id='output-panel', children=[
-        dcc.Graph(
-            id='output-map',
-            figure=build_output_map(crop_irr_list[0], season_list[0], map_var_keys[0], 'mean'),
-            config={'scrollZoom': True, 'modeBarButtonsToAdd': ['lasso2d', 'select2d']},
-            style={'maxWidth': '1300px', 'margin': '0 auto'},
-        ),
-        html.Div(id='output-ts-container', children=[
-            html.Div([
-                html.Span('Time series period:', style=label_style()),
-                html.Button('Selected season', id={'type': 'out-period-btn', 'index': 'season'}, n_clicks=0,
-                            style=btn_style(True, 'purple')),
-                html.Button('Full simulation', id={'type': 'out-period-btn', 'index': 'full'},   n_clicks=0,
-                            style=btn_style(False, 'purple')),
-            ], style={'textAlign': 'right', 'maxWidth': '1300px',
-                      'margin': '8px auto 2px', 'paddingRight': '20px'}),
-            dcc.Graph(id='output-ts',
-                      figure=build_output_ts(None, season_list[0], daily_var_keys[0], 'season')),
-        ], style={'display': 'none'}),
-
-        # ── Export panel ───────────────────────────────────────────────────────
-        html.Hr(style={'maxWidth': '1300px', 'margin': '24px auto 16px'}),
-        html.H3('Export Gridded Output',
-                style={'textAlign': 'center', 'fontFamily': 'Arial',
-                       'fontSize': '15px', 'marginBottom': '14px'}),
-
-        # Variables
-        html.Div([
-            html.Span('Variables:', style=label_style()),
-            dcc.Checklist(
-                id='export-vars',
-                options=[{'label': f'  {DAILY_VARIABLES[v]["label"]}', 'value': v}
-                         for v in daily_var_keys],
-                value=[daily_var_keys[0]],
-                inline=True,
-                style={'fontFamily': 'Arial', 'fontSize': '12px', 'display': 'inline'},
-                inputStyle={'marginRight': '4px', 'marginLeft': '12px'},
-            ),
-        ], style=row_style('10px')),
-
-        # Period
-        html.Div([
-            html.Span('Period:', style=label_style()),
-            dcc.Checklist(
-                id='export-whole-period',
-                options=[{'label': '  Whole simulation', 'value': 'whole'}],
-                value=[],
-                inline=True,
-                style={'display': 'inline', 'fontFamily': 'Arial', 'fontSize': '12px'},
-                inputStyle={'marginRight': '4px', 'marginLeft': '4px'},
-            ),
-            html.Span('  From:', style={'fontFamily': 'Arial', 'fontSize': '12px', 'marginLeft': '16px'}),
-            dcc.Dropdown(id='export-start-year',
-                         options=[{'label': str(y), 'value': y} for y in years],
-                         value=years[0], clearable=False, style=dd_style('80px')),
-            dcc.Dropdown(id='export-start-month',
-                         options=[{'label': f'{m:02d}', 'value': m} for m in range(1, 13)],
-                         value=1, clearable=False, style=dd_style('70px')),
-            dcc.Dropdown(id='export-start-day',
-                         options=[{'label': f'{d:02d}', 'value': d} for d in range(1, 32)],
-                         value=1, clearable=False, style=dd_style('70px')),
-            html.Span('  To:', style={'fontFamily': 'Arial', 'fontSize': '12px', 'marginLeft': '12px'}),
-            dcc.Dropdown(id='export-end-year',
-                         options=[{'label': str(y), 'value': y} for y in years],
-                         value=years[-1], clearable=False, style=dd_style('80px')),
-            dcc.Dropdown(id='export-end-month',
-                         options=[{'label': f'{m:02d}', 'value': m} for m in range(1, 13)],
-                         value=12, clearable=False, style=dd_style('70px')),
-            dcc.Dropdown(id='export-end-day',
-                         options=[{'label': f'{d:02d}', 'value': d} for d in range(1, 32)],
-                         value=31, clearable=False, style=dd_style('70px')),
-        ], style=row_style('10px')),
-
-        # Cells
-        html.Div([
-            html.Span('Cells:', style=label_style()),
-            dcc.Checklist(
-                id='export-whole-area',
-                options=[{'label': '  Whole area', 'value': 'all'}],
-                value=['all'],
-                inline=True,
-                style={'display': 'inline', 'fontFamily': 'Arial', 'fontSize': '12px'},
-                inputStyle={'marginRight': '4px', 'marginLeft': '4px'},
-            ),
-            html.Span(id='export-cell-label',
-                      children='  |  or use lasso/box on the map above to select cells',
-                      style={'fontFamily': 'Arial', 'fontSize': '12px',
-                             'color': '#888888', 'marginLeft': '8px'}),
-        ], style=row_style('10px')),
-
-        # Format
-        html.Div([
-            html.Span('Format:', style=label_style()),
-            dcc.Checklist(
-                id='export-format',
-                options=[
-                    {'label': '  NetCDF (.nc)',   'value': 'nc'},
-                    {'label': '  GeoTIFF (.tif)', 'value': 'tif'},
-                    {'label': '  CSV (.csv)',      'value': 'csv'},
+            # ── Tab bar ───────────────────────────────────────────────────────
+            dcc.Tabs(
+                id='main-tabs', value='output',
+                style={'marginBottom': '10px'},
+                colors={'border': ACCENT, 'primary': ACCENT, 'background': SIDEBAR_BG},
+                children=[
+                    dcc.Tab(
+                        label='Simulation Outputs', value='output',
+                        style={'fontFamily': FONT_STACK, 'fontSize': '12px',
+                               'padding': '6px 8px', 'color': '#4a5568'},
+                        selected_style={'fontFamily': FONT_STACK, 'fontSize': '12px',
+                                        'padding': '6px 8px', 'backgroundColor': ACCENT,
+                                        'color': 'white', 'borderTop': f'3px solid {ACCENT}'},
+                    ),
+                    dcc.Tab(
+                        label='Inputs', value='input',
+                        style={'fontFamily': FONT_STACK, 'fontSize': '12px',
+                               'padding': '6px 8px', 'color': '#4a5568'},
+                        selected_style={'fontFamily': FONT_STACK, 'fontSize': '12px',
+                                        'padding': '6px 8px', 'backgroundColor': ACCENT,
+                                        'color': 'white', 'borderTop': f'3px solid {ACCENT}'},
+                    ),
                 ],
-                value=['csv'],
-                inline=True,
-                style={'fontFamily': 'Arial', 'fontSize': '12px', 'display': 'inline'},
-                inputStyle={'marginRight': '4px', 'marginLeft': '14px'},
             ),
-        ], style=row_style('14px')),
 
-        # Export button + status
-        html.Div([
+            # ── Data Configuration ────────────────────────────────────────────
+            _sec_hdr('Data Configuration'),
+            _ctrl_label('Crop & Irrigation'),
+            dcc.Dropdown(
+                id='crop-dropdown',
+                options=[{'label': ci, 'value': ci} for ci in crop_irr_list],
+                value=crop_irr_list[0], clearable=False, style=DD_CTRL_STYLE,
+            ),
+            _ctrl_label('Season'),
+            dcc.Dropdown(
+                id='season-dropdown',
+                options=(
+                    [{'label': s, 'value': s} for s in season_list] +
+                    [{'label': 'All years', 'value': 'all'}]
+                ),
+                value=season_list[0], clearable=False, style=DD_CTRL_STYLE,
+            ),
+
+            # Aggregation (shown only when season=all + output tab)
+            html.Div(id='agg-row', style={'display': 'none'}, children=[
+                _ctrl_label('Aggregation'),
+                html.Div([
+                    html.Button('Mean', id={'type': 'agg-btn', 'index': 'mean'}, n_clicks=0,
+                                style=btn_style(True,  'teal')),
+                    html.Button('Sum',  id={'type': 'agg-btn', 'index': 'sum'},  n_clicks=0,
+                                style=btn_style(False, 'teal')),
+                ], style={'marginBottom': '6px'}),
+            ]),
+
+            # ── Output controls ───────────────────────────────────────────────
+            html.Div(id='output-controls', children=[
+
+                _sec_hdr('Map Variable'),
+                dbc.Accordion(flush=True, always_open=True,
+                              active_item=['yield'],
+                              style={'marginBottom': '10px',
+                                     'border': '1px solid #e2e8f0',
+                                     'borderRadius': '6px', 'overflow': 'hidden'},
+                              children=[
+                    dbc.AccordionItem(title='Yield & Production', item_id='yield',
+                                      style={'padding': '2px 0'}, children=[
+                        dcc.Dropdown(
+                            id='mapvar-yield-dd',
+                            options=_map_dd_opts(_YIELD_VARS),
+                            value=map_var_keys[0] if map_var_keys[0] in _YIELD_VARS else None,
+                            placeholder='Select variable…', clearable=True,
+                            style=DD_CTRL_STYLE,
+                        ),
+                    ]),
+                    dbc.AccordionItem(title='Water Balance', item_id='water',
+                                      style={'padding': '2px 0'}, children=[
+                        dcc.Dropdown(
+                            id='mapvar-water-dd',
+                            options=_map_dd_opts(_WATER_VARS),
+                            value=None, placeholder='Select variable…',
+                            clearable=True, style=DD_CTRL_STYLE,
+                        ),
+                    ]),
+                    dbc.AccordionItem(title='Water Productivity', item_id='wp',
+                                      style={'padding': '2px 0'}, children=[
+                        dcc.Dropdown(
+                            id='mapvar-wp-dd',
+                            options=_map_dd_opts(_WP_VARS),
+                            value=None, placeholder='Select variable…',
+                            clearable=True, style=DD_CTRL_STYLE,
+                        ),
+                    ]),
+                ]),
+
+                _sec_hdr('Daily Variable'),
+                dbc.Accordion(flush=True, always_open=True,
+                              active_item=['flux'],
+                              style={'marginBottom': '10px',
+                                     'border': '1px solid #e2e8f0',
+                                     'borderRadius': '6px', 'overflow': 'hidden'},
+                              children=[
+                    dbc.AccordionItem(title='Water Fluxes', item_id='flux',
+                                      style={'padding': '2px 0'}, children=[
+                        dcc.Dropdown(
+                            id='dailyvar-flux-dd',
+                            options=_daily_dd_opts(_FLUX_VARS),
+                            value=daily_var_keys[0] if daily_var_keys[0] in _FLUX_VARS else None,
+                            placeholder='Select variable…', clearable=True,
+                            style=DD_CTRL_STYLE,
+                        ),
+                    ]),
+                    dbc.AccordionItem(title='Soil Water', item_id='soil',
+                                      style={'padding': '2px 0'}, children=[
+                        dcc.Dropdown(
+                            id='dailyvar-soil-dd',
+                            options=_daily_dd_opts(_SOIL_VARS),
+                            value=None, placeholder='Select variable…',
+                            clearable=True, style=DD_CTRL_STYLE,
+                        ),
+                    ]),
+                    dbc.AccordionItem(title='Crop Development', item_id='crop_dev',
+                                      style={'padding': '2px 0'}, children=[
+                        dcc.Dropdown(
+                            id='dailyvar-crop-dd',
+                            options=_daily_dd_opts(_CROP_VARS),
+                            value=None, placeholder='Select variable…',
+                            clearable=True, style=DD_CTRL_STYLE,
+                        ),
+                    ]),
+                ]),
+
+            ]),
+
+            # ── Input controls ────────────────────────────────────────────────
+            html.Div(id='input-controls', style={'display': 'none'}, children=[
+
+                _sec_hdr('Climate Variable'),
+                dcc.Dropdown(
+                    id='climvar-dd',
+                    options=[{'label': CLIMATE_VARIABLES[v]['map_label'], 'value': v}
+                             for v in climate_var_keys],
+                    value=climate_var_keys[0], clearable=False, style=DD_CTRL_STYLE,
+                ),
+
+                html.Div(id='spam-btn-row', children=[
+                    _ctrl_label('Crop Area (SPAM)'),
+                    html.Span(id='spam-btn-container', children=[]),
+                ], style={'marginTop': '8px'}),
+            ]),
+
+
+
+
+            # ── Export button pinned at sidebar bottom ────────────────────────
+            html.Div(id='export-btn-wrapper', children=[
+                html.Button(
+                    '⬇  Export Data...',
+                    id='export-modal-open', n_clicks=0,
+                    style={
+                        'width': '100%', 'padding': '8px 0',
+                        'backgroundColor': '#f0f4fa', 'color': ACCENT,
+                        'border': f'1px solid {ACCENT}', 'borderRadius': '5px',
+                        'fontFamily': FONT_STACK, 'fontSize': '12px',
+                        'fontWeight': '600', 'cursor': 'pointer', 'textAlign': 'center',
+                    },
+                ),
+            ], style={
+                'position': 'absolute', 'bottom': '14px',
+                'left': '12px', 'right': '12px',
+            }),
+
+        ]),  # end sidebar col
+
+        # ══════════════════════════════════════════════════════════════════════
+        # RIGHT MAIN CANVAS
+        # ══════════════════════════════════════════════════════════════════════
+        dbc.Col(width=9, style={'padding': '0', 'backgroundColor': 'white'}, children=[
+
+            # ── Output panel ──────────────────────────────────────────────────
+            html.Div(id='output-panel', children=[
+
+                dcc.Graph(
+                    id='output-map',
+                    figure=build_output_map(crop_irr_list[0], season_list[0],
+                                            map_var_keys[0], 'mean'),
+                    config={'scrollZoom': True,
+                            'modeBarButtonsToAdd': ['lasso2d', 'select2d']},
+                    style={'width': '100%'},
+                ),
+
+                # Time series ribbon + graph (hidden until a cell is clicked)
+                html.Div(id='output-ts-container', style={'display': 'none'}, children=[
+
+                    html.Div(style=RIBBON_STYLE, children=[
+                        html.Span(id='ts-ribbon-text',
+                                  children='Select a cell on the map to view time series',
+                                  style={'flexGrow': '1', 'fontFamily': FONT_STACK,
+                                         'fontSize': '12px', 'color': '#4a5568'}),
+                        html.Div([
+                            html.Button(
+                                'Selected season',
+                                id={'type': 'out-period-btn', 'index': 'season'},
+                                n_clicks=0, style=btn_style(True, 'blue')),
+                            html.Button(
+                                'Full simulation',
+                                id={'type': 'out-period-btn', 'index': 'full'},
+                                n_clicks=0, style=btn_style(False, 'blue')),
+                        ], style={'flexShrink': '0', 'paddingLeft': '12px'}),
+                    ]),
+
+                    dcc.Graph(
+                        id='output-ts',
+                        figure=build_output_ts(None, season_list[0],
+                                               daily_var_keys[0], 'season'),
+                        style={'width': '100%'},
+                    ),
+
+                ]),
+
+            ]),
+
+            # ── Input panel ───────────────────────────────────────────────────
+            html.Div(id='input-panel', style={'display': 'none'}, children=[
+
+                html.Div([
+                    html.Span('Crop calendar: ', style={
+                        'fontFamily': FONT_STACK, 'fontSize': '11px',
+                        'fontWeight': '600', 'color': '#4a5568', 'marginRight': '4px',
+                    }),
+                    html.Span(id='cropcal-info-text', children='—',
+                              style={'fontFamily': FONT_STACK, 'fontSize': '11px',
+                                     'color': '#555'}),
+                ], style={
+                    'padding': '5px 14px', 'backgroundColor': '#f8f9fa',
+                    'borderBottom': '1px solid #dee2e6',
+                }),
+
+                dcc.Graph(
+                    id='input-map',
+                    figure=build_input_map(climate_var_keys[0], season_list[0]),
+                    config={'scrollZoom': True},
+                    style={'width': '100%'},
+                ),
+
+                html.Div(id='input-ts-container', style={'display': 'none'}, children=[
+
+                    html.Div(style=RIBBON_STYLE, children=[
+                        html.Span(id='input-ribbon-text',
+                                  children='Select a cell on the map to view time series',
+                                  style={'flexGrow': '1', 'fontFamily': FONT_STACK,
+                                         'fontSize': '12px', 'color': '#4a5568'}),
+                        html.Div([
+                            html.Button(
+                                'Selected season',
+                                id={'type': 'in-period-btn', 'index': 'season'},
+                                n_clicks=0, style=btn_style(True, 'blue')),
+                            html.Button(
+                                'Full simulation',
+                                id={'type': 'in-period-btn', 'index': 'full'},
+                                n_clicks=0, style=btn_style(False, 'blue')),
+                        ], style={'flexShrink': '0', 'paddingLeft': '12px'}),
+                    ]),
+
+                    dcc.Graph(
+                        id='input-ts',
+                        figure=build_input_ts(None, climate_var_keys[0],
+                                              season_list[0], 'season'),
+                        style={'width': '100%'},
+                    ),
+
+                ]),
+
+            ]),
+
+        ]),  # end canvas col
+
+    ]),  # end main row
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # EXPORT MODAL
+    # ══════════════════════════════════════════════════════════════════════════
+    dbc.Modal(id='export-modal', size='lg', is_open=False, children=[
+
+        dbc.ModalHeader(dbc.ModalTitle('Export Gridded Output',
+                        style={'fontFamily': FONT_STACK, 'fontSize': '16px'})),
+
+        dbc.ModalBody(style={'fontFamily': FONT_STACK}, children=[
+
+            html.Div([
+                html.Label('Variables', style={'fontFamily': FONT_STACK, 'fontWeight': '600',
+                                               'fontSize': '12px', 'marginBottom': '8px',
+                                               'display': 'block'}),
+                # Water Fluxes group
+                html.Div([
+                    html.Div('Water Fluxes', style={
+                        'fontFamily': FONT_STACK, 'fontSize': '10px', 'fontWeight': '700',
+                        'color': '#7a8a9a', 'letterSpacing': '1px',
+                        'textTransform': 'uppercase', 'marginBottom': '4px',
+                    }),
+                    dcc.Checklist(
+                        id='export-vars-flux',
+                        options=[{'label': f'  {DAILY_VARIABLES[v]["label"]}', 'value': v}
+                                 for v in _FLUX_VARS],
+                        value=[_FLUX_VARS[0]], inline=True,
+                        style={'fontFamily': FONT_STACK, 'fontSize': '12px'},
+                        inputStyle={'marginRight': '4px', 'marginLeft': '12px'},
+                    ),
+                ], style={'marginBottom': '10px', 'paddingBottom': '8px',
+                          'borderBottom': '1px solid #e2e8f0'}),
+                # Soil Water group
+                html.Div([
+                    html.Div('Soil Water', style={
+                        'fontFamily': FONT_STACK, 'fontSize': '10px', 'fontWeight': '700',
+                        'color': '#7a8a9a', 'letterSpacing': '1px',
+                        'textTransform': 'uppercase', 'marginBottom': '4px',
+                    }),
+                    dcc.Checklist(
+                        id='export-vars-soil',
+                        options=[{'label': f'  {DAILY_VARIABLES[v]["label"]}', 'value': v}
+                                 for v in _SOIL_VARS],
+                        value=[], inline=True,
+                        style={'fontFamily': FONT_STACK, 'fontSize': '12px'},
+                        inputStyle={'marginRight': '4px', 'marginLeft': '12px'},
+                    ),
+                ], style={'marginBottom': '10px', 'paddingBottom': '8px',
+                          'borderBottom': '1px solid #e2e8f0'}),
+                # Crop Development group
+                html.Div([
+                    html.Div('Crop Development', style={
+                        'fontFamily': FONT_STACK, 'fontSize': '10px', 'fontWeight': '700',
+                        'color': '#7a8a9a', 'letterSpacing': '1px',
+                        'textTransform': 'uppercase', 'marginBottom': '4px',
+                    }),
+                    dcc.Checklist(
+                        id='export-vars-crop',
+                        options=[{'label': f'  {DAILY_VARIABLES[v]["label"]}', 'value': v}
+                                 for v in _CROP_VARS],
+                        value=[], inline=True,
+                        style={'fontFamily': FONT_STACK, 'fontSize': '12px'},
+                        inputStyle={'marginRight': '4px', 'marginLeft': '12px'},
+                    ),
+                ]),
+                # Hidden merged store consumed by run_export
+                dcc.Store(id='export-vars', data=[_FLUX_VARS[0]]),
+            ], style={'marginBottom': '14px'}),
+
+            html.Div([
+                html.Label('Period', style={'fontFamily': FONT_STACK, 'fontWeight': '600',
+                                            'fontSize': '12px', 'marginBottom': '4px',
+                                            'display': 'block'}),
+                dcc.Checklist(
+                    id='export-whole-period',
+                    options=[{'label': '  Whole simulation', 'value': 'whole'}],
+                    value=[], inline=True,
+                    style={'display': 'inline', 'fontFamily': FONT_STACK, 'fontSize': '12px'},
+                    inputStyle={'marginRight': '4px', 'marginLeft': '4px'},
+                ),
+                html.Span('  From:', style={'fontFamily': FONT_STACK, 'fontSize': '12px',
+                                            'marginLeft': '16px'}),
+                dcc.Dropdown(id='export-start-year',
+                             options=[{'label': str(y), 'value': y} for y in years],
+                             value=years[0], clearable=False, style=dd_style('80px')),
+                dcc.Dropdown(id='export-start-month',
+                             options=[{'label': f'{m:02d}', 'value': m} for m in range(1, 13)],
+                             value=1, clearable=False, style=dd_style('70px')),
+                dcc.Dropdown(id='export-start-day',
+                             options=[{'label': f'{d:02d}', 'value': d} for d in range(1, 32)],
+                             value=1, clearable=False, style=dd_style('70px')),
+                html.Span('  To:', style={'fontFamily': FONT_STACK, 'fontSize': '12px',
+                                          'marginLeft': '12px'}),
+                dcc.Dropdown(id='export-end-year',
+                             options=[{'label': str(y), 'value': y} for y in years],
+                             value=years[-1], clearable=False, style=dd_style('80px')),
+                dcc.Dropdown(id='export-end-month',
+                             options=[{'label': f'{m:02d}', 'value': m} for m in range(1, 13)],
+                             value=12, clearable=False, style=dd_style('70px')),
+                dcc.Dropdown(id='export-end-day',
+                             options=[{'label': f'{d:02d}', 'value': d} for d in range(1, 32)],
+                             value=31, clearable=False, style=dd_style('70px')),
+            ], style={'marginBottom': '14px'}),
+
+            html.Div([
+                html.Label('Cells', style={'fontFamily': FONT_STACK, 'fontWeight': '600',
+                                           'fontSize': '12px', 'marginBottom': '4px',
+                                           'display': 'block'}),
+                dcc.Checklist(
+                    id='export-whole-area',
+                    options=[{'label': '  Whole area', 'value': 'all'}],
+                    value=['all'], inline=True,
+                    style={'display': 'inline', 'fontFamily': FONT_STACK, 'fontSize': '12px'},
+                    inputStyle={'marginRight': '4px', 'marginLeft': '4px'},
+                ),
+                html.Span(id='export-cell-label',
+                          children='  |  or use lasso/box on the map to select cells',
+                          style={'fontFamily': FONT_STACK, 'fontSize': '12px',
+                                 'color': '#888888', 'marginLeft': '8px'}),
+            ], style={'marginBottom': '14px'}),
+
+            html.Div([
+                html.Label('Format', style={'fontFamily': FONT_STACK, 'fontWeight': '600',
+                                            'fontSize': '12px', 'marginBottom': '4px',
+                                            'display': 'block'}),
+                dcc.Checklist(
+                    id='export-format',
+                    options=[
+                        {'label': '  NetCDF (.nc)',   'value': 'nc'},
+                        {'label': '  GeoTIFF (.tif)', 'value': 'tif'},
+                        {'label': '  CSV (.csv)',      'value': 'csv'},
+                    ],
+                    value=['csv'], inline=True,
+                    style={'fontFamily': FONT_STACK, 'fontSize': '12px'},
+                    inputStyle={'marginRight': '4px', 'marginLeft': '14px'},
+                ),
+            ]),
+
+        ]),
+
+        dbc.ModalFooter([
+            html.Span(id='export-status', children='',
+                      style={'fontFamily': FONT_STACK, 'fontSize': '12px',
+                             'color': '#27ae60', 'marginRight': 'auto'}),
             html.Button('Export', id='export-btn', n_clicks=0,
                         style={**btn_style(True, 'blue'),
-                               'fontSize': '14px', 'padding': '8px 32px'}),
-            html.Span(id='export-status', children='',
-                      style={'fontFamily': 'Arial', 'fontSize': '12px',
-                             'marginLeft': '16px', 'color': '#27ae60'}),
-        ], style={'textAlign': 'center', 'marginBottom': '24px'}),
+                               'fontSize': '13px', 'padding': '7px 28px'}),
+            dbc.Button('Close', id='export-modal-close', n_clicks=0,
+                       color='secondary', size='sm',
+                       style={'marginLeft': '8px', 'fontFamily': FONT_STACK}),
+        ]),
 
     ]),
 
-# ── Input panel ────────────────────────────────────────────────────────────
-    html.Div(id='input-panel', children=[
-
-        # ── Crop calendar info ─────────────────────────────────────────────────
-        html.Div([
-            html.Span('Crop calendar:', style=label_style()),
-            html.Span(id='cropcal-info-text', children='—',
-                      style={'fontFamily': 'Arial', 'fontSize': '12px', 'color': '#555'}),
-        ], style={'textAlign': 'center', 'maxWidth': '1300px',
-                  'margin': '0 auto 5px', 'padding': '3px 0'}),
-
-        dcc.Graph(
-            id='input-map',
-            figure=build_input_map(climate_var_keys[0], season_list[0]),
-            config={'scrollZoom': True},
-            style={'maxWidth': '1300px', 'margin': '0 auto'},
-        ),
-        html.Div(id='input-ts-container', children=[
-            html.Div([
-                html.Span('Time series period:', style=label_style()),
-                html.Button('Selected season', id={'type': 'in-period-btn', 'index': 'season'}, n_clicks=0,
-                            style=btn_style(True, 'red')),
-                html.Button('Full simulation', id={'type': 'in-period-btn', 'index': 'full'},   n_clicks=0,
-                            style=btn_style(False, 'red')),
-            ], style={'textAlign': 'right', 'maxWidth': '1300px',
-                      'margin': '8px auto 2px', 'paddingRight': '20px'}),
-                
-            dcc.Graph(id='input-ts',
-                      figure=build_input_ts(None, climate_var_keys[0], season_list[0], 'season')),
-        ], style={'display': 'none'}),
-    ], style={'display': 'none'}),
-
-    # ── Stores ────────────────────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════════
+    # STORES 
+    # ══════════════════════════════════════════════════════════════════════════
     dcc.Store(id='sel-tab',        data='output'),
     dcc.Store(id='sel-crop',       data=crop_irr_list[0]),
     dcc.Store(id='sel-season',     data=season_list[0]),
@@ -1230,18 +1637,17 @@ app.layout = html.Div([
     dcc.Store(id='sel-spam-var',   data=''),
     dcc.Store(id='input-mode',     data='climate'),
 
-], style={'maxWidth': '1400px', 'margin': '0 auto', 'padding': '10px'})
+])
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║                        CALLBACKS                                           ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
+# ── Tab selection ─────────────────────────────────────────────────────────────
 @app.callback(Output('sel-tab', 'data'),
-              Input({'type': 'tab-btn', 'index': ALL}, 'n_clicks'),
-              prevent_initial_call=True)
-def set_tab(_):
-    t = ctx.triggered_id
-    return t['index'] if t else 'output'
+              Input('main-tabs', 'value'))
+def set_tab(active_tab):
+    return active_tab or 'output'
 
 @app.callback(
     Output('output-panel',    'style'),
@@ -1256,41 +1662,18 @@ def toggle_tabs(sel_tab):
         return show, hide, show, hide
     return hide, show, hide, show
 
+# ── Crop & season ─────────────────────────────────────────────────────────────
 @app.callback(Output('sel-crop', 'data'),
-              Input({'type': 'crop-btn', 'index': ALL}, 'n_clicks'),
-              prevent_initial_call=True)
-def set_crop(_):
-    t = ctx.triggered_id
-    return t['index'] if t else crop_irr_list[0]
+              Input('crop-dropdown', 'value'))
+def set_crop(val):
+    return val or crop_irr_list[0]
 
 @app.callback(Output('sel-season', 'data'),
-              Input({'type': 'season-btn', 'index': ALL}, 'n_clicks'),
-              prevent_initial_call=True)
-def set_season(_):
-    t = ctx.triggered_id
-    return t['index'] if t else season_list[0]
+              Input('season-dropdown', 'value'))
+def set_season(val):
+    return val or season_list[0]
 
-@app.callback(Output('sel-map-var', 'data'),
-              Input({'type': 'mapvar-btn', 'index': ALL}, 'n_clicks'),
-              prevent_initial_call=True)
-def set_map_var(_):
-    t = ctx.triggered_id
-    return t['index'] if t else map_var_keys[0]
-
-@app.callback(Output('sel-daily-var', 'data'),
-              Input({'type': 'dailyvar-btn', 'index': ALL}, 'n_clicks'),
-              prevent_initial_call=True)
-def set_daily_var(_):
-    t = ctx.triggered_id
-    return t['index'] if t else daily_var_keys[0]
-
-@app.callback(Output('sel-clim-var', 'data'),
-              Input({'type': 'climvar-btn', 'index': ALL}, 'n_clicks'),
-              prevent_initial_call=True)
-def set_clim_var(_):
-    t = ctx.triggered_id
-    return t['index'] if t else climate_var_keys[0]
-
+# ── Aggregation ───────────────────────────────────────────────────────────────
 @app.callback(Output('sel-agg', 'data'),
               Input({'type': 'agg-btn', 'index': ALL}, 'n_clicks'),
               prevent_initial_call=True)
@@ -1298,6 +1681,72 @@ def set_agg(_):
     t = ctx.triggered_id
     return t['index'] if t else 'mean'
 
+@app.callback(
+    Output({'type': 'agg-btn', 'index': ALL}, 'style'),
+    Input('sel-agg', 'data'),
+)
+def style_agg_btns(sel_agg):
+    return [btn_style(a == sel_agg, 'teal') for a in ['mean', 'sum']]
+
+@app.callback(
+    Output('agg-row', 'style'),
+    Input('sel-season', 'data'),
+    Input('sel-tab',    'data'),
+)
+def toggle_agg_row(sel_season, sel_tab):
+    if sel_season == 'all' and sel_tab == 'output':
+        return {'display': 'block'}
+    return {'display': 'none'}
+
+# ── Map variable selection (three accordion dropdowns → one store) ─────────────
+@app.callback(
+    Output('sel-map-var',    'data'),
+    Output('mapvar-yield-dd', 'value'),
+    Output('mapvar-water-dd', 'value'),
+    Output('mapvar-wp-dd',    'value'),
+    Input('mapvar-yield-dd', 'value'),
+    Input('mapvar-water-dd', 'value'),
+    Input('mapvar-wp-dd',    'value'),
+    prevent_initial_call=True,
+)
+def set_map_var(yield_v, water_v, wp_v):
+    t = ctx.triggered_id
+    if t == 'mapvar-yield-dd' and yield_v:
+        return yield_v, yield_v, None, None
+    if t == 'mapvar-water-dd' and water_v:
+        return water_v, None, water_v, None
+    if t == 'mapvar-wp-dd' and wp_v:
+        return wp_v, None, None, wp_v
+    return map_var_keys[0], map_var_keys[0], None, None
+
+# ── Daily variable selection ──────────────────────────────────────────────────
+@app.callback(
+    Output('sel-daily-var',    'data'),
+    Output('dailyvar-flux-dd', 'value'),
+    Output('dailyvar-soil-dd', 'value'),
+    Output('dailyvar-crop-dd', 'value'),
+    Input('dailyvar-flux-dd', 'value'),
+    Input('dailyvar-soil-dd', 'value'),
+    Input('dailyvar-crop-dd', 'value'),
+    prevent_initial_call=True,
+)
+def set_daily_var(flux_v, soil_v, crop_v):
+    t = ctx.triggered_id
+    if t == 'dailyvar-flux-dd' and flux_v:
+        return flux_v, flux_v, None, None
+    if t == 'dailyvar-soil-dd' and soil_v:
+        return soil_v, None, soil_v, None
+    if t == 'dailyvar-crop-dd' and crop_v:
+        return crop_v, None, None, crop_v
+    return daily_var_keys[0], daily_var_keys[0], None, None
+
+# ── Climate variable selection ────────────────────────────────────────────────
+@app.callback(Output('sel-clim-var', 'data'),
+              Input('climvar-dd', 'value'))
+def set_clim_var(val):
+    return val or climate_var_keys[0]
+
+# ── Period buttons ────────────────────────────────────────────────────────────
 @app.callback(Output('sel-out-period', 'data'),
               Input({'type': 'out-period-btn', 'index': ALL}, 'n_clicks'),
               prevent_initial_call=True)
@@ -1312,6 +1761,19 @@ def set_in_period(_):
     t = ctx.triggered_id
     return t['index'] if t else 'season'
 
+@app.callback(
+    Output({'type': 'out-period-btn', 'index': ALL}, 'style'),
+    Output({'type': 'in-period-btn',  'index': ALL}, 'style'),
+    Input('sel-out-period', 'data'),
+    Input('sel-in-period',  'data'),
+)
+def style_period_btns(sel_out, sel_in):
+    return (
+        [btn_style(p == sel_out, 'blue') for p in ['season', 'full']],
+        [btn_style(p == sel_in,  'blue') for p in ['season', 'full']],
+    )
+
+# ── Cell click selection ──────────────────────────────────────────────────────
 @app.callback(Output('sel-out-cell', 'data'),
               Input('output-map', 'clickData'),
               prevent_initial_call=True)
@@ -1319,7 +1781,6 @@ def set_out_cell(click_data):
     if click_data is None:
         return None
     pt = click_data['points'][0]
-    # Click on choropleth tile
     if 'location' in pt:
         return int(pt['location'])
     return None
@@ -1346,9 +1807,7 @@ def set_in_cell(click_data):
 def handle_lasso(selected_data, whole_area):
     if 'all' in (whole_area or []):
         return [], '  |  Whole area selected'
-
     if selected_data and selected_data.get('points'):
-        # Centroid scatter points carry cell_id as text
         cell_ids = []
         for pt in selected_data['points']:
             if 'text' in pt:
@@ -1358,8 +1817,7 @@ def handle_lasso(selected_data, whole_area):
                     pass
         if cell_ids:
             return cell_ids, f'  |  {len(cell_ids)} cells selected via lasso/box'
-
-    return [], '  |  or use lasso/box on the map above to select cells'
+    return [], '  |  or use lasso/box on the map to select cells'
 
 # ── Date dropdowns: disable when whole period checked ─────────────────────────
 @app.callback(
@@ -1375,76 +1833,141 @@ def toggle_date_dropdowns(whole_period):
     disabled = 'whole' in (whole_period or [])
     return [disabled] * 6
 
-# ── Button styles ─────────────────────────────────────────────────────────────
+# ── Merge categorised export checklists → export-vars store ──────────────────
 @app.callback(
-    Output({'type': 'tab-btn',        'index': ALL}, 'style'),
-    Output({'type': 'crop-btn',       'index': ALL}, 'style'),
-    Output({'type': 'season-btn',     'index': ALL}, 'style'),
-    Output({'type': 'agg-btn',        'index': ALL}, 'style'),
-    Output({'type': 'mapvar-btn',     'index': ALL}, 'style'),
-    Output({'type': 'dailyvar-btn',   'index': ALL}, 'style'),
-    Output({'type': 'climvar-btn',    'index': ALL}, 'style'),
-    Output({'type': 'out-period-btn', 'index': ALL}, 'style'),
-    Output({'type': 'in-period-btn',  'index': ALL}, 'style'),
-    Input('sel-tab',        'data'),
+    Output('export-vars', 'data'),
+    Input('export-vars-flux', 'value'),
+    Input('export-vars-soil', 'value'),
+    Input('export-vars-crop', 'value'),
+)
+def merge_export_vars(flux, soil, crop):
+    return (flux or []) + (soil or []) + (crop or [])
+
+# ── Export modal toggle ───────────────────────────────────────────────────────
+@app.callback(
+    Output('export-modal', 'is_open'),
+    Input('export-modal-open',  'n_clicks'),
+    Input('export-modal-close', 'n_clicks'),
+    State('export-modal', 'is_open'),
+    prevent_initial_call=True,
+)
+def toggle_export_modal(open_n, close_n, is_open):
+    return not is_open
+
+# ── Time series ribbon text ───────────────────────────────────────────────────
+@app.callback(
+    Output('ts-ribbon-text', 'children'),
+    Input('sel-out-cell',   'data'),
     Input('sel-crop',       'data'),
     Input('sel-season',     'data'),
-    Input('sel-agg',        'data'),
-    Input('sel-map-var',    'data'),
-    Input('sel-daily-var',  'data'),
-    Input('sel-clim-var',   'data'),
     Input('sel-out-period', 'data'),
-    Input('sel-in-period',  'data'),
 )
-def update_btn_styles(sel_tab, sel_crop, sel_season, sel_agg,
-                      sel_map_var, sel_daily_var, sel_clim_var,
-                      sel_out_period, sel_in_period):
-    all_seasons = season_list + ['all']
-    return (
-        [btn_style(t == sel_tab,         'blue' if t == 'output' else 'red') for t in ['output', 'input']],
-        [btn_style(ci == sel_crop,       'blue')   for ci in crop_irr_list],
-        [btn_style(s == sel_season,      'green' if s != 'all' else 'teal') for s in all_seasons],
-        [btn_style(a == sel_agg,         'teal')   for a  in ['mean', 'sum']],
-        [btn_style(v == sel_map_var,     'orange') for v  in map_var_keys],
-        [btn_style(v == sel_daily_var,   'purple') for v  in daily_var_keys],
-        [btn_style(v == sel_clim_var,    'red')    for v  in climate_var_keys],
-        [btn_style(p == sel_out_period,  'purple') for p  in ['season', 'full']],
-        [btn_style(p == sel_in_period,   'red')    for p  in ['season', 'full']],
-    )
+def update_ts_ribbon_text(cell_id, crop, season, period):
+    if cell_id is None:
+        return 'Select a cell on the map to view time series'
+    meta = cell_meta.get(cell_id, {})
+    period_label = 'Full simulation' if period == 'full' else season
+    return (f"Selected: Cell {cell_id}  |  "
+            f"Location: ({meta.get('x', 0):.3f}, {meta.get('y', 0):.3f})  |  "
+            f"Crop: {crop}  |  Season: {period_label}")
 
 @app.callback(
-    Output('agg-row', 'style'),
-    Input('sel-season', 'data'),
-    Input('sel-tab',    'data'),
+    Output('input-ribbon-text', 'children'),
+    Input('sel-in-cell',   'data'),
+    Input('sel-clim-var',  'data'),
+    Input('sel-season',    'data'),
+    Input('sel-in-period', 'data'),
 )
-def toggle_agg_row(sel_season, sel_tab):
-    base = {'textAlign': 'center', 'maxWidth': '1300px', 'margin': '0 auto 5px'}
-    if sel_season == 'all' and sel_tab == 'output':
-        return {**base, 'display': 'block'}
-    return {**base, 'display': 'none'}
+def update_input_ribbon_text(cell_id, clim_var, season, period):
+    if cell_id is None:
+        return 'Select a cell on the map to view time series'
+    meta = cell_meta.get(cell_id, {})
+    period_label = 'Full simulation' if period == 'full' else season
+    var_label = CLIMATE_VARIABLES.get(clim_var, {}).get('label', clim_var)
+    return (f"Selected: Cell {cell_id}  |  "
+            f"Location: ({meta.get('x', 0):.3f}, {meta.get('y', 0):.3f})  |  "
+            f"Variable: {var_label}  |  Season: {period_label}")
 
-# ── Output map ────────────────────────────────────────────────────────────────
+# ── Output map: data layer (Patch only z/text/colorscale — GeoJSON stays in browser) ──
 @app.callback(
-    Output('output-map',  'figure'),
-    Input('sel-crop',     'data'),
-    Input('sel-season',   'data'),
-    Input('sel-map-var',  'data'),
-    Input('sel-agg',      'data'),
+    Output('output-map', 'figure', allow_duplicate=True),
+    Input('sel-crop',    'data'),
+    Input('sel-season',  'data'),
+    Input('sel-map-var', 'data'),
+    Input('sel-agg',     'data'),
+    prevent_initial_call=True,
+)
+def patch_output_map_data(sel_crop, sel_season, sel_map_var, sel_agg):
+    var_info = MAP_VARIABLES[sel_map_var]
+    agg_func = sel_agg if sel_agg in ['mean', 'sum'] else var_info['default_agg']
+
+    if sel_season == 'all':
+        subset = precomputed_agg.get((sel_crop, sel_map_var, agg_func))
+        if subset is None:
+            patched = Patch()
+            patched['data'][1]['locations'] = []
+            patched['data'][1]['z']         = []
+            patched['data'][1]['text']      = []
+            return patched
+        subset    = subset.copy()
+        agg_label = f"{'Sum' if agg_func == 'sum' else 'Avg'} all years"
+        vmin, vmax = crop_var_range_all[sel_crop][f'{sel_map_var}_{agg_func}']
+    else:
+        subset    = summary[(summary['crop_irr'] == sel_crop) & (summary['season_label'] == sel_season)].copy()
+        agg_label = sel_season
+        vmin, vmax = crop_var_range[sel_crop][sel_map_var]
+
+    subset['cell_id_str'] = subset['cell_id'].astype(int).astype(str)
+
+    hover_texts = (
+        '<b>Cell ' + subset['cell_id'].astype(int).astype(str) + '</b><br>'
+        + 'Lon: ' + subset['x'].map('{:.3f}'.format) + ' | Lat: ' + subset['y'].map('{:.3f}'.format) + '<br>'
+        + 'Crop: ' + subset['crop'].str.capitalize() + ' (' + subset['irrigation'] + ')<br>'
+        + f'Period: {agg_label}<br>'
+        + '──────────────────<br>'
+        + var_info['label'] + ': ' + subset[sel_map_var].map('{:.3f}'.format) + '<br>'
+        + '<i>Click to view time series</i>'
+    ).tolist()
+
+    patched = Patch()
+    patched['data'][1]['locations']                 = subset['cell_id_str'].tolist()
+    patched['data'][1]['z']                         = subset[sel_map_var].tolist()
+    patched['data'][1]['zmin']                      = float(vmin)
+    patched['data'][1]['zmax']                      = float(vmax)
+    patched['data'][1]['colorscale']                = var_info['sum_colorscale'] if agg_func == 'sum' else var_info['colorscale']
+    patched['data'][1]['text']                      = hover_texts
+    patched['data'][1]['colorbar']['title']['text'] = f"{var_info['label']}<br>({agg_label})"
+    return patched
+
+
+# ── Output map: highlight layers (click + lasso) ──────────────────────────────
+@app.callback(
+    Output('output-map',  'figure', allow_duplicate=True),
     Input('sel-out-cell', 'data'),
     Input('lasso-cells',  'data'),
-    State('output-map',   'relayoutData'),
+    prevent_initial_call=True,
 )
-def update_output_map(sel_crop, sel_season, sel_map_var, sel_agg,
-                      sel_cell, lasso_cells, relayout_data):
-    return build_output_map(sel_crop, sel_season, sel_map_var, sel_agg,
-                            sel_cell, lasso_cells, relayout_data)
+def patch_output_map_highlights(sel_cell, lasso_cells):
+    sel_locations = [str(sel_cell)] if sel_cell is not None else []
+    sel_z         = [1] if sel_cell is not None else []
+    lasso_ids     = [str(c) for c in (lasso_cells or [])]
+    lasso_z       = [1] * len(lasso_ids)
+
+    patched = Patch()
+    patched['data'][2]['locations'] = sel_locations
+    patched['data'][2]['z']         = sel_z
+    patched['data'][3]['locations'] = lasso_ids
+    patched['data'][3]['z']         = lasso_z
+    return patched
+
 
 # ── Crop calendar info text ───────────────────────────────────────────────────
 @app.callback(
     Output('cropcal-info-text', 'children'),
     Input('sel-crop', 'data'),
+    Input('sel-tab',  'data'),
 )
-def update_cropcal_info(sel_crop):
+def update_cropcal_info(sel_crop, sel_tab):
     info = get_cropcal_summary(sel_crop)
     if info is None:
         return 'No crop calendar data found for this crop and irrigation type.'
@@ -1460,23 +1983,21 @@ def update_cropcal_info(sel_crop):
     Output('input-mode',         'data'),
     Input('sel-crop',    'data'),
     Input({'type': 'spamvar-btn', 'index': ALL}, 'n_clicks'),
-    Input({'type': 'climvar-btn', 'index': ALL}, 'n_clicks'),
+    Input('climvar-dd',  'value'),
     State('sel-spam-var', 'data'),
     prevent_initial_call=False,
 )
-def update_spam_buttons(sel_crop, spam_clicks, clim_clicks, current_spam_var):
+def update_spam_buttons(sel_crop, spam_clicks, clim_val, current_spam_var):
     triggered = ctx.triggered_id
 
-    # Determine which SPAM vars match the selected crop
-    relevant = spam_vars_for_crop(sel_crop)
+    relevant     = spam_vars_for_crop(sel_crop)
     default_spam = relevant[0] if relevant else ''
 
-    # Determine mode and active SPAM var
     if triggered and isinstance(triggered, dict):
         if triggered.get('type') == 'spamvar-btn':
             active_spam = triggered['index']
             mode = 'spam'
-        elif triggered.get('type') == 'climvar-btn':
+        elif triggered == 'climvar-dd':
             active_spam = current_spam_var or default_spam
             mode = 'climate'
         else:
@@ -1486,10 +2007,9 @@ def update_spam_buttons(sel_crop, spam_clicks, clim_clicks, current_spam_var):
         active_spam = default_spam
         mode = 'climate'
 
-    # Rebuild buttons for this crop
     if not relevant:
         buttons = [html.Span('No SPAM data for this crop.',
-                             style={'fontFamily': 'Arial', 'fontSize': '12px',
+                             style={'fontFamily': FONT_STACK, 'fontSize': '12px',
                                     'color': '#888'})]
     else:
         buttons = [
@@ -1505,21 +2025,72 @@ def update_spam_buttons(sel_crop, spam_clicks, clim_clicks, current_spam_var):
     return buttons, active_spam, mode
 
 
-# ── Input map: handles both climate and SPAM ──────────────────────────────────
+# ── Input map: data layer (Patch only z/text/colorscale — GeoJSON stays in browser) ──
 @app.callback(
-    Output('input-map',   'figure'),
+    Output('input-map',   'figure', allow_duplicate=True),
     Input('sel-clim-var', 'data'),
     Input('sel-spam-var', 'data'),
     Input('input-mode',   'data'),
     Input('sel-season',   'data'),
-    Input('sel-in-cell',  'data'),
-    State('input-map',    'relayoutData'),
+    prevent_initial_call=True,
 )
-def update_input_map(sel_clim_var, sel_spam_var, input_mode,
-                     sel_season, sel_cell, relayout_data):
+
+
+def patch_input_map_data(sel_clim_var, sel_spam_var, input_mode, sel_season):
     if input_mode == 'spam' and sel_spam_var:
-        return build_spam_map(sel_spam_var, sel_cell, relayout_data)
-    return build_input_map(sel_clim_var, sel_season, sel_cell, relayout_data)
+        if spam_ds is None or sel_spam_var not in spam_ds.data_vars:
+            return Patch()
+        label   = sel_spam_var.replace('_physical_area', '').replace('_', ' ')
+        z_raw   = spam_ds[sel_spam_var].sel(x=_x_da, y=_y_da, method='nearest').values
+        z_vals  = np.where(np.isnan(z_raw), 0.0, z_raw).tolist()
+        locs    = [str(int(c)) for c in _cell_ids_arr]
+        vmin, vmax = 0.0, float(max(z_vals)) if max(z_vals) > 0 else 1.0
+        texts   = [
+            f"<b>Cell {cid}</b><br>Lon: {cell_meta[cid]['x']:.3f} | Lat: {cell_meta[cid]['y']:.3f}<br>{label}: {val:.2f} ha"
+            for cid, val in zip(_cell_ids_arr.tolist(), z_vals)
+        ]
+        colorscale = 'YlGn'
+        cb_title   = f"{label}<br>(ha)"
+    else:
+        arr = get_climate_map_values(sel_clim_var, sel_season)
+        if arr is None:
+            return Patch()
+        var_info   = CLIMATE_VARIABLES[sel_clim_var]
+        z_vals     = arr.sel(x=_x_da, y=_y_da, method='nearest').values.tolist()
+        locs       = [str(int(c)) for c in _cell_ids_arr]
+        vmin, vmax = float(min(z_vals)), float(max(z_vals))
+        period_label = 'All years (daily mean)' if sel_season == 'all' else f'{sel_season} (daily mean)'
+        texts = [
+            f"<b>Cell {cid}</b><br>Lon: {cell_meta[cid]['x']:.3f} | Lat: {cell_meta[cid]['y']:.3f}<br>{var_info['map_label']}: {val:.3f} {var_info['unit']}<br><i>Click to view time series</i>"
+            for cid, val in zip(_cell_ids_arr.tolist(), z_vals)
+        ]
+        colorscale = var_info['colorscale']
+        cb_title = f"{var_info['unit']}<br>({period_label})"
+
+    patched = Patch()
+    patched['data'][1]['locations']                 = locs
+    patched['data'][1]['z']                         = z_vals
+    patched['data'][1]['zmin']                      = vmin
+    patched['data'][1]['zmax']                      = vmax
+    patched['data'][1]['colorscale']                = colorscale
+    patched['data'][1]['text']                      = texts
+    patched['data'][1]['colorbar']['title']['text'] = cb_title
+    return patched
+
+
+# ── Input map: highlight layer (click) ────────────────────────────────────────
+@app.callback(
+    Output('input-map',  'figure', allow_duplicate=True),
+    Input('sel-in-cell', 'data'),
+    prevent_initial_call=True,
+)
+def patch_input_map_highlight(sel_cell):
+    sel_locations = [str(sel_cell)] if sel_cell is not None else []
+    sel_z         = [1] if sel_cell is not None else []
+    patched = Patch()
+    patched['data'][2]['locations'] = sel_locations
+    patched['data'][2]['z']         = sel_z
+    return patched
 
 # ── Output time series ────────────────────────────────────────────────────────
 @app.callback(
@@ -1538,7 +2109,7 @@ def update_output_ts(cell_id, season_label, daily_var, ts_period, ts_clicks):
         return (build_output_ts(None, effective_season, daily_var, effective_period, ts_clicks),
                 {'display': 'none'})
     return (build_output_ts(cell_id, effective_season, daily_var, effective_period, ts_clicks),
-            {'maxWidth': '1300px', 'margin': '10px auto 0', 'display': 'block'})
+            {'display': 'block', 'maxWidth': '100%', 'margin': '0 auto'})
 
 # ── Input time series ─────────────────────────────────────────────────────────
 @app.callback(
@@ -1560,7 +2131,7 @@ def update_input_ts(cell_id, clim_var, season_label, ts_period, ts_clicks, sel_c
                 {'display': 'none'})
     return (build_input_ts(cell_id, clim_var, effective_season, effective_period,
                            ts_clicks, sel_crop_irr=sel_crop),
-            {'maxWidth': '1300px', 'margin': '10px auto 0', 'display': 'block'})
+            {'display': 'block', 'maxWidth': '100%', 'margin': '0 auto'})
 
 # ── TS click handlers ─────────────────────────────────────────────────────────
 def _handle_click(click_data, ts_clicks):
@@ -1615,7 +2186,7 @@ def reset_in_clicks(_, __, ___):
 @app.callback(
     Output('export-status', 'children'),
     Input('export-btn',          'n_clicks'),
-    State('export-vars',         'value'),
+    State('export-vars',         'data'),
     State('export-whole-period', 'value'),
     State('export-start-year',   'value'),
     State('export-start-month',  'value'),
@@ -1638,7 +2209,6 @@ def run_export(n_clicks, export_vars, whole_period,
     if not formats:
         return 'Select at least one format.'
 
-    # Resolve period
     if 'whole' in (whole_period or []):
         start_date = sim_start
         end_date   = sim_end
@@ -1651,7 +2221,6 @@ def run_export(n_clicks, export_vars, whole_period,
         if start_date > end_date:
             return 'Start date must be before end date.'
 
-    # Resolve cells
     if 'all' in (whole_area or []) or not lasso_cells:
         selected_cells = list(cell_meta.keys())
     else:
@@ -1661,6 +2230,15 @@ def run_export(n_clicks, export_vars, whole_period,
                          str(start_date.date()), str(end_date.date()), formats)
     return status
 
+@app.callback(
+    Output('export-btn-wrapper', 'style'),
+    Input('sel-tab', 'data'),
+)
+def toggle_export_btn(sel_tab):
+    base = {'position': 'absolute', 'bottom': '14px', 'left': '12px', 'right': '12px'}
+    if sel_tab == 'output':
+        return {**base, 'display': 'block'}
+    return {**base, 'display': 'none'}
 
 # ── Export: constrain end date dropdowns based on start date ─────────────────
 @app.callback(
