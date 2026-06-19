@@ -7,7 +7,7 @@ name = "aquacropgrid-run"
 version = "0.1.0.dev0"            # dev marker; bump to 0.1.0 for the first real release
 description = "Gridded AquaCrop-OSPy simulation runner"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }       # replace with your chosen licence
 authors = [{ name = "Chris Bowden" }]
 
@@ -23,10 +23,10 @@ classifiers = [
 dependencies = [
     "numpy",
     "pandas",
-    "xarray",
+    "xarray>=2025.1",
     "netcdf4",
     "tqdm",
-    "aquacrop",                  # pin once you know the version you target, e.g. "aquacrop==3.0.9"
+    "aquacrop",                  
 ]
 
 [project.optional-dependencies]
