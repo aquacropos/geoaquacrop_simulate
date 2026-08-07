@@ -85,10 +85,10 @@ def main():
     #   PaddyRice1, PaddyRice2           (first / second rice season)
     #   Wheat_summer, Wheat_winter       (spring-sown / autumn-sown wheat)
     config_dict = {
-        'weather_path': '../aquacropgrid-preproc/processed',
-        'soil_path': '../aquacropgrid-preproc/processed',
-        'pheno_path': '../aquacropgrid-preproc/processed',
-        'spam_path': '../aquacropgrid-preproc/processed',
+        'weather_path': '../../../aquacropgrid-preproc/processed',
+        'soil_path': '../../../aquacropgrid-preproc/processed',
+        'pheno_path': '../../../aquacropgrid-preproc/processed',
+        'spam_path': '../../../aquacropgrid-preproc/processed',
         'start_date': '2008/01/01',
         'end_date': '2010/12/31',
         'crop': 'Maize',
@@ -98,17 +98,39 @@ def main():
             method='Depth',
             depth_layer=[0, 2],
             value=['FC', 'FC']),   # %
-        'output_dir': 'outputs'
+        'output_dir': 'outputs',
+        'correction': {
+            'method': "scale",            # None (off) | 'scale' | 'calibrate'
+            'reference_path': '../../reference/high_plains_maize_reference.nc',    # e.g. 'reference/spam_yield.nc' (or a DataArray)
+            'reference_var': "maize_yield_dry_tha",     # variable name if the file is a Dataset
+            'value_col': 'Dry yield (tonne/ha)',
+            'scale_mode': 'local',    # scale:     'global' | 'local'
+            'lever': 'canopy',         # calibrate: 'canopy' (CCx) | 'biomass' (WP)
+            'bounds': None,            # optional (lo, hi) search bounds
+            'search_sample': 200,      # cells subsampled for the calibration search
+            'reuse_results': 'latest',    # <-- None (normal run) | 'latest' | path to a .pkl
+            'output_name': 'yield_corrected.nc',
+        },
     }
+    
+    
 
     # --- 1. Load config from config.py ---
     sim_config = SimulationConfig(config_dict)
-    validated_inputs = sim_config.validate_all_inputs()
-    coords_df = validated_inputs['coords']
-
+    
     # --- 2. Set up logging ---
     logger = setup_logging(sim_config.config['output_dir'])
     logger.info("AquaCrop gridded simulation started")
+    
+    # --- Optional: correct an already-saved run, skipping simulation ---
+    from .correction import should_reuse, correct_saved_run
+    if should_reuse(sim_config.config):
+        correct_saved_run(sim_config.config, logger)
+        logger.info("Correction applied to saved results; no simulation run.")
+        return None, None
+    
+    validated_inputs = sim_config.validate_all_inputs()
+    coords_df = validated_inputs['coords']
 
     # --- 3. Run simulations in parallel ---
     processor = ParallelProcessor(sim_config.config, validated_inputs, logger)
@@ -118,6 +140,9 @@ def main():
     summary_file, daily_file = processor.save_results(
         summary_results, daily_results, sim_config.config['output_dir']
     )
+    
+    # --- 5. Optional config-driven yield correction ---
+    processor.apply_correction(summary_results, coords_df)
 
     logger.info("Simulation finished successfully")
     logger.info(f"Summary saved to: {summary_file}")
