@@ -15,7 +15,7 @@ import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
 
-from yield_correction import (scale_to_reference, calibrate_to_reference,
+from aquacropgrid_run.yield_correction import (scale_to_reference, calibrate_to_reference,
                               LEVERS)
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "viz")
