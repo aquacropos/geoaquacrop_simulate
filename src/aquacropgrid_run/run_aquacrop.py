@@ -100,7 +100,7 @@ def main():
             value=['FC', 'FC']),   # %
         'output_dir': 'outputs',
         'correction': {
-            'method': "scale",            # None (off) | 'scale' | 'calibrate'
+            'method': "calibrate",            # None (off) | 'scale' | 'calibrate'
             'reference_path': '../../reference/high_plains_maize_reference.nc',    # e.g. 'reference/spam_yield.nc' (or a DataArray)
             'reference_var': "maize_yield_dry_tha",     # variable name if the file is a Dataset
             'value_col': 'Dry yield (tonne/ha)',
@@ -108,7 +108,7 @@ def main():
             'lever': 'canopy',         # calibrate: 'canopy' (CCx) | 'biomass' (WP)
             'bounds': None,            # optional (lo, hi) search bounds
             'search_sample': 200,      # cells subsampled for the calibration search
-            'reuse_results': 'latest',    # <-- None (normal run) | 'latest' | path to a .pkl
+            'reuse_results': None,    # <-- None (normal run) | 'latest' | path to a .pkl
             'output_name': 'yield_corrected.nc',
         },
     }
@@ -132,7 +132,14 @@ def main():
     validated_inputs = sim_config.validate_all_inputs()
     coords_df = validated_inputs['coords']
 
-    # --- 3. Run simulations in parallel ---
+    # --- 3a. Optional calibration search (subsample) BEFORE the full run ---
+    from .correction import calibration_override
+    sim_config.config.update(
+        calibration_override(sim_config.config, ParallelProcessor,
+                             validated_inputs, coords_df, logger)
+    )
+
+    # --- 3b. Run simulations in parallel (uses the calibrated parameter) ---
     processor = ParallelProcessor(sim_config.config, validated_inputs, logger)
     summary_results, daily_results = processor.run_parallel(coords_df)
 

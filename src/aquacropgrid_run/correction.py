@@ -168,6 +168,43 @@ def save_correction(result, output_dir, name):
     return out
 
 
+# --------------------------------------------------- calibration phase 1 ----
+
+def calibration_override(config, processor_cls, validated_inputs, coords_df,
+                         logger):
+    """Phase 1 of calibration: run the parameter search on a subsample of cells
+    BEFORE the full simulation, so the full run happens exactly once — with the
+    calibrated parameter already applied.
+
+    Returns {'crop_param_override': {param: value}} to merge into the config, or
+    {} when the config isn't in calibrate mode (so it's safe to call always).
+    """
+    cfg = normalise_correction(config.get("correction"))
+    if cfg is None or cfg["method"] != "calibrate":
+        return {}
+
+    reference = load_reference(cfg)
+    param = LEVERS[cfg["lever"]]["parameter"]
+    n = cfg["search_sample"]
+    coords_search = (coords_df.sample(min(n, len(coords_df)), random_state=0)
+                     if n else coords_df)
+
+    def grid_runner(value):
+        sub_cfg = {**config, "crop_param_override": {param: value}}
+        proc = processor_cls(sub_cfg, validated_inputs, logger)
+        summ, _ = proc.run_parallel(coords_search)
+        return points_to_reference(
+            summary_to_points(summ, cfg["value_col"]), reference)
+
+    logger.info(f"Calibration search: {cfg['lever']} ({param}) on "
+                f"{len(coords_search)} of {len(coords_df)} cells")
+    cal = calibrate_to_reference(grid_runner, reference, lever=cfg["lever"],
+                                 bounds=cfg["bounds"], regrid=lambda s, t: s)
+    logger.info(f"Calibrated {param}={cal['value']:.4f} — applying to the "
+                f"full run")
+    return {"crop_param_override": {param: float(cal["value"])}}
+
+
 # --------------------------------------------------------- orchestration ----
 
 def run_correction(processor, summary_results, coords_df):
@@ -188,6 +225,25 @@ def run_correction(processor, summary_results, coords_df):
                  f"factor_mean={result['factor_mean']:.4f}, stats={result['stats']}")
     else:  # calibrate
         param = LEVERS[cfg["lever"]]["parameter"]
+        already = (processor.config.get("crop_param_override") or {})
+        if param in already:
+            # calibration_override already ran the search and the full
+            # simulation used the calibrated value -> just report on it
+            pts = summary_to_points(summary_results, cfg["value_col"])
+            m_ref = points_to_reference(pts, reference)
+            result = {"lever": cfg["lever"], "parameter": param,
+                      "value": float(already[param]),
+                      "corrected": points_to_grid(pts),
+                      "model_on_reference": m_ref,
+                      "residual_on_reference": (m_ref - reference),
+                      "stats": _fit_stats(m_ref, reference)}
+            log.info(f"Calibrated {param}={result['value']:.4f}; "
+                     f"stats={result['stats']}")
+            out = save_correction(result, processor.config["output_dir"],
+                                  cfg["output_name"])
+            log.info(f"Corrected yield written to {out}")
+            return result
+
         n = cfg["search_sample"]
         coords_search = (coords_df.sample(min(n, len(coords_df)), random_state=0)
                          if n else coords_df)
