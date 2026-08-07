@@ -193,10 +193,8 @@ class CropAdjuster:
 
         
         # Now safe to convert
-        planting_day = int(planting_val)
-        
-        # Convert planting day to date string
-        planting_date = (dt.datetime(2000, 1, 1) + dt.timedelta(planting_day - 1)).strftime('%m/%d')
+        planting_day = min(int(planting_val), 365)
+        planting_date = (dt.datetime(2001, 1, 1) + dt.timedelta(planting_day - 1)).strftime('%m/%d')
         crop_obj.planting_date = planting_date
         
         # Calculate scaling factor
@@ -319,6 +317,10 @@ def worker_run(
         
         crop_obj = Crop(crop_name, planting_date='01/01')  # Default date
         crop_obj.CalendarType = (1)  # Force calendar-day mode so CD parameter adjustments take effect
+        
+        # optional global crop-parameter override (used by calibration)
+        for _k, _v in (config.get("crop_param_override") or {}).items():
+            setattr(crop_obj, _k, _v)
         
         # Adjust crop phenology
         crop_obj = CropAdjuster.adjust_crop_phenology(crop_obj, pheno_data)
@@ -456,6 +458,12 @@ class ParallelProcessor:
         self.logger.info("Parallel processing completed")
         
         return summary_results, daily_results
+    
+    def apply_correction(self, summary_results, coords_df):
+        """Config-driven yield bias-correction / calibration (no-op unless the
+        'correction' block is set)."""
+        from .correction import run_correction
+        return run_correction(self, summary_results, coords_df)
     
     def save_results(self, summary_results: List, daily_results: List, output_dir: Path):
         """Save results to pickle files."""
