@@ -6,13 +6,10 @@ real AquaCrop runs. Run with:  pytest test_yield_correction.py
 """
 import numpy as np
 import pytest
-import sys
 
 xr = pytest.importorskip("xarray")
 
-sys.path.insert(0, "../src/aquacropgrid_run")
-
-from yield_correction import (scale_to_reference, calibrate_to_reference,
+from aquacropgrid_run.yield_correction import (scale_to_reference, calibrate_to_reference,
                               regrid_to, LEVERS)
 
 NF = 24          # fine grid size
