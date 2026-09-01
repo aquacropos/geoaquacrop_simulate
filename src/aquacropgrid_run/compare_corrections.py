@@ -1,145 +1,176 @@
 """
-compare_corrections.py — visually inspect real correction outputs.
+compare_corrections.py — inspect real correction outputs at REGION scale, per
+year.
 
-Takes the NetCDFs written by calibration and scaling runs (plus the reference
-dataset, and optionally the uncorrected run's summary pickle) and produces:
+Takes the NetCDFs written by calibration and scaling runs (plus the region
+reference, and optionally the uncorrected run's summary pickle) and produces:
 
-  1. maps.png         basic yield maps: reference, uncorrected, calibrated,
-                      scaled -- all on a shared colour scale, so output
-                      patterns are directly comparable.
-  2. differences.png  difference maps (model - reference) at the reference
-                      scale for each corrected run, on a shared diverging
-                      scale, plus a histogram of the differences.
-  3. a printed stats table (n, bias, MAE, RMSE) for each run.
+  1. maps_<year>.png    per year: the reference on its region polygons, and
+                        each run's yield on the simulation grid -- each shown
+                        at its own native support, shared colour scale.
+  2. differences.png    region-polygon difference maps (model - reference),
+                        rows = years, columns = runs, shared diverging scale,
+                        plus per-year difference histograms.
+  3. timeseries.png     area-weighted domain mean per year for the reference
+                        and each run.
+  4. stats.csv + a printed table: per year and overall, per run.
 
-Usage (from the repo root, env active):
+Model grids are aggregated UP to the reference's regions (area-weighted), the
+same operation the corrections use. Nothing is averaged over years.
 
-  python -m aquacropgrid_run.compare_corrections \\
-      --reference reference/high_plains_maize_reference.nc \\
-      --reference-var maize_yield_dry_tha \\
-      --calibrated outputs/yield_calibrated.nc \\
-      --scaled outputs/yield_scaled.nc \\
-      --summary outputs/summary_results_20260807_120000.pkl \\
-      --out-dir outputs/comparison
+Run from the Spyder console::
 
-Only --reference is required; supply whichever of --calibrated / --scaled /
---summary you have. NOTE: both correction modes default to writing
-'yield_corrected.nc', so set a distinct correction.output_name per run (e.g.
-'yield_calibrated.nc', 'yield_scaled.nc') or rename the files before comparing.
+    from geoaquacrop_sim.compare_corrections import main
+    main([
+        "--reference", "reference/high_plains_maize_reference.geojson",
+        "--calibrated", "outputs/yield_calibrated.nc",
+        "--scaled", "outputs/yield_scaled.nc",
+        "--summary", "outputs/summary_results_20260807_120000.pkl",
+        "--out-dir", "outputs/comparison",
+    ])
+
+Only --reference is required; supply whichever runs you have.
 """
 import argparse
 import pickle
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 
-from .correction import _to_yx, summary_to_grid
+from .correction import load_reference, summary_to_points
+from .yield_correction import (aggregate_to_regions, region_assignment,
+                               join_reference, fit_stats, grid_to_points,
+                               points_to_grid)
 
 
 # --------------------------------------------------------- loading ----------
 
-def load_grid(path, var=None):
-    """Load a yield grid from NetCDF as a (y, x) DataArray."""
-    path = str(path)
-    if var:
-        da = xr.open_dataset(path)[var]
-    else:
-        ds = xr.open_dataset(path)
-        names = [v for v in ds.data_vars]
-        if len(names) != 1:
-            raise ValueError(
-                f"{path} holds {len(names)} variables {names}; "
-                f"pass the one to use explicitly")
-        da = ds[names[0]]
-    return _to_yx(da.squeeze(drop=True))
+def load_grid(path):
+    """Load a (year, y, x) yield grid from NetCDF."""
+    ds = xr.open_dataset(str(path))
+    names = list(ds.data_vars)
+    if len(names) != 1:
+        raise ValueError(f"{path} holds {len(names)} variables {names}")
+    da = ds[names[0]]
+    if "year" not in da.dims:
+        raise ValueError(f"{path} has no 'year' dimension; corrections are "
+                         f"per-year, so re-run with the current code.")
+    return da
 
 
-def load_summary_grid(path, value_col="Dry yield (tonne/ha)"):
-    """Uncorrected model yield grid from a saved summary_results_*.pkl."""
+def load_summary_points(path, value_col, start_year=None):
     with open(path, "rb") as f:
         summary_results = pickle.load(f)
-    return _to_yx(summary_to_grid(summary_results, value_col))
-
-
-# --------------------------------------------------------- comparison -------
-
-def to_reference(model, reference, method="linear"):
-    """Put a model grid on the reference grid for differencing."""
-    return model.interp_like(reference, method=method)
-
-
-def stats(model_on_ref, reference):
-    m = np.asarray(model_on_ref.values, float).ravel()
-    r = np.asarray(reference.values, float).ravel()
-    ok = np.isfinite(m) & np.isfinite(r)
-    m, r = m[ok], r[ok]
-    if m.size == 0:
-        return {"n": 0, "bias": np.nan, "mae": np.nan, "rmse": np.nan}
-    d = m - r
-    return {"n": int(m.size), "bias": float(d.mean()),
-            "mae": float(np.abs(d).mean()),
-            "rmse": float(np.sqrt((d ** 2).mean()))}
+    return summary_to_points(summary_results, value_col, start_year)
 
 
 # --------------------------------------------------------- plotting ---------
 
-def _map(ax, da, title, **kw):
-    im = ax.pcolormesh(da["x"], da["y"], da.values, shading="auto", **kw)
+def _grid_map(ax, da2d, title, **kw):
+    im = ax.pcolormesh(da2d["x"], da2d["y"], da2d.values, shading="auto", **kw)
     ax.set_title(title, fontsize=9)
-    ax.set_xlabel("lon", fontsize=8)
-    ax.set_ylabel("lat", fontsize=8)
     ax.tick_params(labelsize=7)
     return im
 
 
-def maps_figure(layers, units="t/ha"):
-    """layers: list of (label, DataArray). Shared colour scale across panels."""
-    finite = np.concatenate([d.values[np.isfinite(d.values)].ravel()
-                             for _, d in layers])
-    vmin, vmax = np.percentile(finite, [2, 98])
-    n = len(layers)
-    fig, axes = plt.subplots(1, n, figsize=(4.2 * n, 4.6), squeeze=False)
-    fig.suptitle("Yield patterns (shared colour scale)", fontweight="bold")
-    for ax, (label, da) in zip(axes[0], layers):
-        im = _map(ax, da, label, vmin=vmin, vmax=vmax, cmap="YlGn")
-    fig.colorbar(im, ax=axes[0].tolist(), fraction=0.025, pad=0.02,
-                 label=f"yield ({units})")
+def _county_map(ax, gdf, column, title, **kw):
+    gdf.plot(column=column, ax=ax, legend=False, **kw)
+    ax.set_title(title, fontsize=9)
+    ax.tick_params(labelsize=7)
+
+
+def maps_figure(year, reference_gdf, ref_col, runs, units="t/ha"):
+    """Reference on region polygons; each run on the simulation grid."""
+    vals = [reference_gdf[ref_col].dropna().to_numpy()]
+    for _, g in runs:
+        v = g.sel(year=year).values
+        vals.append(v[np.isfinite(v)].ravel())
+    allv = np.concatenate([v for v in vals if v.size])
+    vmin, vmax = np.percentile(allv, [2, 98])
+
+    n = 1 + len(runs)
+    fig, axes = plt.subplots(1, n, figsize=(4.2 * n, 4.8), squeeze=False)
+    fig.suptitle(f"Yield {year} — reference at region support, "
+                 f"model on the simulation grid (shared colour scale)",
+                 fontweight="bold")
+    _county_map(axes[0][0], reference_gdf, ref_col, f"reference {year}",
+                cmap="YlGn", vmin=vmin, vmax=vmax,
+                missing_kwds={"color": "#eeeeee"})
+    im = None
+    for ax, (label, g) in zip(axes[0][1:], runs):
+        im = _grid_map(ax, g.sel(year=year), f"{label} {year}",
+                       vmin=vmin, vmax=vmax, cmap="YlGn")
+    if im is not None:
+        fig.colorbar(im, ax=axes[0].tolist(), fraction=0.025, pad=0.02,
+                     label=f"yield ({units})")
     return fig
 
 
-def differences_figure(diffs, units="t/ha"):
-    """diffs: list of (label, difference DataArray on the reference grid, stats)."""
-    finite = np.concatenate([d.values[np.isfinite(d.values)].ravel()
-                             for _, d, _ in diffs])
-    lim = float(np.percentile(np.abs(finite), 98)) or 1.0
-    n = len(diffs)
-    fig, axes = plt.subplots(1, n + 1, figsize=(4.2 * n + 5.2, 4.6),
-                             squeeze=False,
-                             gridspec_kw={"wspace": 0.45})
-    fig.suptitle("Difference from reference (model \u2212 reference, "
-                 "at reference scale)", fontweight="bold")
-    im = None
-    for ax, (label, da, st) in zip(axes[0], diffs):
-        im = _map(ax, da,
-                  f"{label}\nbias={st['bias']:+.2f}, RMSE={st['rmse']:.2f} {units}",
-                  vmin=-lim, vmax=lim, cmap="RdBu_r")
-    if im is not None:
-        fig.colorbar(im, ax=axes[0][:n].tolist(), fraction=0.025, pad=0.015,
-                     label=f"difference ({units})")
+def differences_figure(years, regions, diff_tables, units="t/ha"):
+    """Region-polygon difference maps: rows = years, columns = runs."""
+    allv = np.concatenate([t["residual"].to_numpy(float)
+                           for t in diff_tables.values()])
+    lim = float(np.percentile(np.abs(allv), 98)) or 1.0
+    labels = list(diff_tables)
+    ncol = len(labels)
+    fig, axes = plt.subplots(len(years), ncol + 1,
+                             figsize=(4.2 * ncol + 5.0, 4.2 * len(years)),
+                             squeeze=False, gridspec_kw={"wspace": 0.4})
+    fig.suptitle("Difference from reference (model \u2212 reference) at region "
+                 "scale, per year", fontweight="bold")
+    for i, yr in enumerate(years):
+        for j, label in enumerate(labels):
+            t = diff_tables[label]
+            sub = t[t["year"] == yr]
+            gdf = regions.merge(sub[["region_id", "residual"]], on="region_id",
+                                 how="left")
+            st = sub["residual"]
+            w = sub["weight"].to_numpy(float)
+            rmse = np.sqrt(np.sum(w * st.to_numpy(float) ** 2) / np.sum(w)) \
+                if len(sub) else np.nan
+            bias = np.sum(w * st.to_numpy(float)) / np.sum(w) if len(sub) else np.nan
+            _county_map(axes[i][j], gdf, "residual",
+                        f"{label} {yr}\nbias={bias:+.2f}, RMSE={rmse:.2f}",
+                        cmap="RdBu_r", vmin=-lim, vmax=lim,
+                        missing_kwds={"color": "#eeeeee"})
+        axh = axes[i][ncol]
+        for label in labels:
+            t = diff_tables[label]
+            v = t.loc[t["year"] == yr, "residual"].to_numpy(float)
+            if v.size:
+                axh.hist(v, bins=30, histtype="step", lw=1.5, label=label)
+        axh.axvline(0, color="k", lw=0.8)
+        axh.set_title(f"differences {yr}", fontsize=9)
+        axh.set_xlabel(f"model \u2212 reference ({units})", fontsize=8)
+        axh.set_ylabel("regions", fontsize=8)
+        axh.tick_params(labelsize=7)
+        axh.legend(fontsize=7)
+        axh.grid(alpha=0.25)
+    sm = plt.cm.ScalarMappable(cmap="RdBu_r",
+                               norm=plt.Normalize(vmin=-lim, vmax=lim))
+    fig.colorbar(sm, ax=[axes[i][j] for i in range(len(years))
+                         for j in range(ncol)],
+                 fraction=0.015, pad=0.015, label=f"difference ({units})")
+    return fig
 
-    axh = axes[0][n]
-    for label, da, _ in diffs:
-        v = da.values[np.isfinite(da.values)].ravel()
-        axh.hist(v, bins=40, histtype="step", lw=1.6, label=label)
-    axh.axvline(0, color="k", lw=0.8)
-    axh.set_title("distribution of differences", fontsize=9)
-    axh.set_xlabel(f"model \u2212 reference ({units})", fontsize=8)
-    axh.set_ylabel("reference cells", fontsize=8)
-    axh.tick_params(labelsize=7)
-    axh.legend(fontsize=7)
-    axh.grid(alpha=0.25)
+
+def timeseries_figure(series, units="t/ha"):
+    fig, ax = plt.subplots(figsize=(7.5, 4.2))
+    ax.set_title("Area-weighted domain mean yield per year (region scale)",
+                 fontweight="bold")
+    for label, s in series:
+        style = "k--o" if label == "reference" else "-o"
+        ax.plot(s.index.to_numpy(), s.to_numpy(), style, ms=5, lw=1.7,
+                label=label)
+    ax.set_xlabel("year")
+    ax.set_ylabel(f"mean yield ({units})")
+    ax.set_xticks(series[0][1].index.to_numpy())
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
     return fig
 
 
@@ -147,72 +178,91 @@ def differences_figure(diffs, units="t/ha"):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="Compare calibrated / scaled correction outputs against "
-                    "the reference dataset.")
+        description="Compare per-year calibrated / scaled correction outputs "
+                    "against the region reference.")
     ap.add_argument("--reference", required=True,
-                    help="reference yield NetCDF")
-    ap.add_argument("--reference-var", default=None,
-                    help="variable name inside the reference file")
-    ap.add_argument("--calibrated", default=None,
-                    help="NetCDF written by a method='calibrate' run")
-    ap.add_argument("--scaled", default=None,
-                    help="NetCDF written by a method='scale' run")
+                    help="region reference (GeoJSON/GPKG) from build_reference.py")
+    ap.add_argument("--calibrated", default=None)
+    ap.add_argument("--scaled", default=None)
     ap.add_argument("--summary", default=None,
                     help="summary_results_*.pkl for the UNCORRECTED baseline")
-    ap.add_argument("--value-col", default="Dry yield (tonne/ha)",
-                    help="yield column in the summary pickle")
-    ap.add_argument("--regrid", default="linear", choices=["linear", "nearest"],
-                    help="how to put model grids on the reference grid")
-    ap.add_argument("--units", default="t/ha", help="label for colour bars")
-    ap.add_argument("--out-dir", default="comparison",
-                    help="directory for the PNGs")
+    ap.add_argument("--value-col", default="Dry yield (tonne/ha)")
+    ap.add_argument("--start-year", type=int, default=None)
+    ap.add_argument("--units", default="t/ha")
+    ap.add_argument("--out-dir", default="comparison")
     args = ap.parse_args(argv)
 
-    reference = load_grid(args.reference, args.reference_var)
+    regions, reference = load_reference({"reference_path": args.reference})
 
-    runs = []                                   # (label, grid, corrected?)
+    runs = []            # (label, grid DataArray)
     if args.summary:
-        runs.append(("uncorrected", load_summary_grid(args.summary,
-                                                      args.value_col), False))
+        pts = load_summary_points(args.summary, args.value_col, args.start_year)
+        runs.append(("uncorrected", points_to_grid(pts)))
     if args.calibrated:
-        runs.append(("calibrated", load_grid(args.calibrated), True))
+        runs.append(("calibrated", load_grid(args.calibrated)))
     if args.scaled:
-        runs.append(("scaled", load_grid(args.scaled), True))
+        runs.append(("scaled", load_grid(args.scaled)))
     if not runs:
         ap.error("supply at least one of --calibrated / --scaled / --summary")
 
-    # ---- stats table ----
-    rows, diffs = [], []
-    for label, grid, _ in runs:
-        on_ref = to_reference(grid, reference, args.regrid)
-        st = stats(on_ref, reference)
-        rows.append((label, st))
-        diffs.append((label, (on_ref - reference), st))
+    years = sorted(reference["year"].unique().tolist())
 
-    print(f"\nReference: {args.reference}"
-          f"  ({reference.sizes.get('y')} x {reference.sizes.get('x')} cells)")
-    print(f"{'run':<14}{'n':>7}{'bias':>10}{'MAE':>10}{'RMSE':>10}")
-    print("-" * 51)
-    for label, st in rows:
-        print(f"{label:<14}{st['n']:>7}{st['bias']:>10.3f}"
-              f"{st['mae']:>10.3f}{st['rmse']:>10.3f}")
-    best = min((r for r in rows if np.isfinite(r[1]["rmse"])),
-               key=lambda r: r[1]["rmse"], default=None)
-    if best:
-        print(f"\nLowest RMSE: {best[0]}")
+    # one cell->region assignment, reused for every run
+    assignment = region_assignment(grid_to_points(runs[0][1]), regions)
 
-    # ---- figures ----
+    diff_tables, stats_rows, series = {}, [], []
+    ref_by_year = reference.groupby("year").apply(
+        lambda s: np.average(s["ref"]), include_groups=False)
+    series.append(("reference", ref_by_year))
+
+    for label, grid in runs:
+        table = join_reference(aggregate_to_regions(grid, assignment),
+                               reference)
+        table["residual"] = table["model"] - table["ref"]
+        diff_tables[label] = table
+        st = fit_stats(table)
+        for yr, row in st["per_year"].iterrows():
+            stats_rows.append({"run": label, "year": int(yr), **row.to_dict()})
+        stats_rows.append({"run": label, "year": "all", **st["overall"]})
+        series.append((label, table.groupby("year").apply(
+            lambda s: np.average(s["model"], weights=s["weight"]),
+            include_groups=False)))
+
+    table_out = pd.DataFrame(stats_rows)
+    print(f"\nReference: {args.reference}  ({len(regions)} regions, "
+          f"{len(years)} years)\n")
+    print(f"{'run':<14}{'year':>6}{'regions':>10}{'bias':>10}{'MAE':>10}{'RMSE':>10}")
+    print("-" * 60)
+    for _, r in table_out.iterrows():
+        print(f"{r['run']:<14}{str(r['year']):>6}{int(r['n']):>10}"
+              f"{r['bias']:>10.3f}{r['mae']:>10.3f}{r['rmse']:>10.3f}")
+
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    table_out.to_csv(out / "stats.csv", index=False)
 
-    layers = [("reference", reference)] + [(l, g) for l, g, _ in runs]
-    f1 = maps_figure(layers, args.units)
-    f1.savefig(out / "maps.png", dpi=130, bbox_inches="tight")
+    written = []
+    for yr in years:
+        ref_gdf = regions.merge(
+            reference.loc[reference["year"] == yr, ["region_id", "ref"]],
+            on="region_id", how="left")
+        fig = maps_figure(yr, ref_gdf, "ref", runs, args.units)
+        p = out / f"maps_{yr}.png"
+        fig.savefig(p, dpi=130, bbox_inches="tight")
+        written.append(p)
 
-    f2 = differences_figure(diffs, args.units)
-    f2.savefig(out / "differences.png", dpi=130, bbox_inches="tight")
+    fd = differences_figure(years, regions, diff_tables, args.units)
+    fd.savefig(out / "differences.png", dpi=130, bbox_inches="tight")
+    written.append(out / "differences.png")
 
-    print(f"Figures written to {out}/maps.png and {out}/differences.png")
+    ft = timeseries_figure(series, args.units)
+    ft.savefig(out / "timeseries.png", dpi=130, bbox_inches="tight")
+    written.append(out / "timeseries.png")
+
+    print(f"\nWritten to {out}:")
+    for p in written:
+        print(f"  {p.name}")
+    print("  stats.csv")
     plt.show()
     return 0
 

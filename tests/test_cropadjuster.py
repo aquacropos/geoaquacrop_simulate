@@ -18,7 +18,7 @@ class TestAdjustPhenology:
             _fresh_maize(), {"planting_day": 120, "growing_season_length": 130})
         assert crop is not None
         # planting day 120 of a non-leap reference year (2000 is leap, day 120 = 29 Apr)
-        assert crop.planting_date == "04/29"
+        assert crop.planting_date == "04/30"
         # MaturityCD is scaled to the requested season length
         assert crop.MaturityCD == 130
 

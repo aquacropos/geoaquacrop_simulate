@@ -1,11 +1,11 @@
 """
-Unit tests for correction (config-driven orchestration). Fast and
-deterministic: synthetic per-cell summaries and a fake processor whose yield
-responds monotonically to the crop-parameter override, so no real AquaCrop runs.
+Unit tests for correction (config-driven, per-year, region-support).
 
-Run:  pytest test_correction.py
+Synthetic region polygons, per-cell summaries and a fake processor; no real
+AquaCrop runs.  Run:  pytest tests/test_correction.py
 """
 import logging
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -13,52 +13,104 @@ import pandas as pd
 import pytest
 
 xr = pytest.importorskip("xarray")
+gpd = pytest.importorskip("geopandas")
+from shapely.geometry import box
 
-from aquacropgrid_run.correction import (run_correction, normalise_correction,
-                                         summary_to_grid, points_to_reference,
-                                         summary_to_points, should_reuse,
-                                         calibration_override,
-                                         correct_saved_run, find_latest_summary,
-                                         load_saved_summary)
+from geoaquacrop_sim.correction import (
+    run_correction, normalise_correction, summary_to_points, summary_to_grid,
+    load_reference, should_reuse, correct_saved_run, find_latest_summary,
+    load_saved_summary, calibration_override, output_name, OUTPUT_NAMES)
+from geoaquacrop_sim.yield_correction import (region_assignment,
+                                               aggregate_to_regions)
 
-LOG = logging.getLogger("test"); LOG.addHandler(logging.NullHandler())
+LOG = logging.getLogger("test")
+LOG.addHandler(logging.NullHandler())
+
+YEARS = [2008, 2009, 2010]
+VALUE_COL = "Dry yield (tonne/ha)"
 
 
 # --------------------------------------------------------- fixtures ---------
 
-def _coords(n=12):
-    xs = np.linspace(0, 1, n); ys = np.linspace(0, 1, n)
-    return pd.DataFrame([(x, y) for y in ys for x in xs], columns=["x", "y"])
+def _counties_gdf():
+    polys, region_id = [], []
+    for i, (x0, y0) in enumerate([(-101, 40), (-100, 40),
+                                  (-101, 39), (-100, 39)], start=1):
+        polys.append(box(x0, y0, x0 + 1, y0 + 1))
+        region_id.append(f"2000{i}")
+    return gpd.GeoDataFrame({"region_id": region_id}, geometry=polys, crs=4326)
 
 
-def _summary(coords, ccx=0.7):
-    """Per-cell final_stats-like frames; yield linear in ccx, 3 seasons/cell."""
+def _coords():
+    lat = np.arange(39.1, 41.0, 0.2)
+    lon = np.arange(-100.9, -99.0, 0.2)
+    return pd.DataFrame([(x, y) for y in lat for x in lon], columns=["x", "y"])
+
+
+def _summary(coords, scale=1.0, year_factor=None, with_harvest=True):
+    """final_stats-like frames: one row per cell PER SEASON."""
+    year_factor = year_factor or {y: 1.0 for y in YEARS}
     rows = []
     for _, r in coords.iterrows():
-        base = 5 + 2 * r.y + 1.5 * r.x
-        for s in range(3):
-            rows.append({"x": r.x, "y": r.y,
-                         "Dry yield (tonne/ha)": base * (ccx / 0.7) + 0.01 * s})
+        base = 6.0 + (r.y - 39.0) + 0.5 * (r.x + 101.0)
+        for s, yr in enumerate(YEARS):
+            row = {"x": r.x, "y": r.y, "Season": s,
+                   VALUE_COL: base * scale * year_factor[yr]}
+            if with_harvest:
+                row["Harvest Date (YYYY/MM/DD)"] = f"{yr}/09/20"
+            rows.append(row)
     return [pd.DataFrame(rows)]
 
 
+def _write_reference(path, coords, year_factor=None):
+    """Region reference whose values are the area-weighted aggregate of the
+    default model run (optionally scaled per year)."""
+    gdf = _counties_gdf()
+    pts = summary_to_points(_summary(coords), VALUE_COL, 2008)
+    agg = aggregate_to_regions(pts, region_assignment(pts, gdf))
+    for yr in YEARS:
+        vals = agg[agg["year"] == yr].set_index("region_id")["model"]
+        f = (year_factor or {}).get(yr, 1.0)
+        gdf[f"yield_{yr}"] = gdf["region_id"].map(vals) * f
+    gdf.to_file(path, driver="GeoJSON")
+    return path
+
+
 class FakeProcessor:
-    def __init__(self, config, validated_inputs, logger):
-        self.config, self.validated_inputs, self.logger = config, validated_inputs, logger
+    """Yield responds linearly to the CCx override; default is biased high."""
+
+    def __init__(self, config, validated_inputs=None, logger=None):
+        self.config = config
+        self.validated_inputs = validated_inputs or {}
+        self.logger = logger or LOG
 
     def run_parallel(self, coords_df):
-        ccx = self.config.get("crop_param_override", {}).get("CCx", 0.7)
-        return _summary(coords_df, ccx), None
+        ccx = (self.config.get("crop_param_override") or {}).get("CCx", 0.96)
+        return _summary(coords_df, scale=ccx / 0.70), None
+
+
+class CountingProcessor(FakeProcessor):
+    calls = None
+    n_full_total = None
+
+    def run_parallel(self, coords_df):
+        key = "full" if len(coords_df) == type(self).n_full_total else "search"
+        type(self).calls[key] += 1
+        return super().run_parallel(coords_df)
 
 
 @pytest.fixture
 def setup(tmp_path):
     coords = _coords()
-    reference = summary_to_grid(_summary(coords, 0.7)).coarsen(
-        y=3, x=3, boundary="trim").mean()
-    ref_path = tmp_path / "ref.nc"
-    reference.to_netcdf(ref_path)
-    return coords, str(ref_path), str(tmp_path)
+    ref = tmp_path / "ref.geojson"
+    _write_reference(ref, coords)
+    return coords, str(ref), str(tmp_path)
+
+
+def _cfg(ref, out, **corr):
+    base = {"method": "scale", "reference_path": ref}
+    base.update(corr)
+    return {"output_dir": out, "start_date": "2008/01/01", "correction": base}
 
 
 # --------------------------------------------------------- config -----------
@@ -73,9 +125,136 @@ def test_normalise_requires_reference():
         normalise_correction({"method": "scale"})
 
 
-def test_normalise_bad_method():
-    with pytest.raises(ValueError):
-        normalise_correction({"method": "wat", "reference_path": "x.nc"})
+def test_calibrate_plus_reuse_rejected():
+    with pytest.raises(ValueError, match="reuse_results"):
+        normalise_correction({"method": "calibrate", "reference_path": "x.geojson",
+                              "lever": "canopy", "reuse_results": "latest"})
+
+
+# ------------------------------------------- automatic output naming --------
+
+def test_output_name_derived_from_method():
+    assert output_name({"method": "scale", "output_name": None}) == "yield_scaled.nc"
+    assert output_name({"method": "calibrate",
+                        "output_name": None}) == "yield_calibrated.nc"
+
+
+def test_output_name_explicit_wins():
+    assert output_name({"method": "scale", "output_name": "mine.nc"}) == "mine.nc"
+
+
+def test_normalise_fills_output_name():
+    cfg = normalise_correction({"method": "calibrate",
+                                "reference_path": "x.geojson"})
+    assert cfg["output_name"] == OUTPUT_NAMES["calibrate"]
+
+
+def test_modes_write_distinct_files(setup):
+    """The two modes must not overwrite each other."""
+    coords, ref, out = setup
+    for method, extra in (("scale", {}), ("calibrate", {"lever": "canopy"})):
+        cfg = _cfg(ref, out, method=method, **extra)
+        if method == "calibrate":
+            cfg["crop_param_override"] = {"CCx": 0.70}
+        run_correction(FakeProcessor(cfg, {}, LOG), _summary(coords), coords)
+    assert (Path(out) / "yield_scaled.nc").exists()
+    assert (Path(out) / "yield_calibrated.nc").exists()
+
+
+# --------------------------------------------------------- reference --------
+
+def test_reference_needs_year_fields(tmp_path):
+    gdf = _counties_gdf()
+    p = tmp_path / "noyears.geojson"
+    gdf.to_file(p, driver="GeoJSON")
+    with pytest.raises(ValueError, match="yield_"):
+        load_reference({"reference_path": str(p)})
+
+
+def test_reference_loads_long_form(setup):
+    _, ref, _ = setup
+    regions, long = load_reference({"reference_path": ref})
+    assert set(long.columns) == {"region_id", "year", "ref"}
+    assert sorted(long["year"].unique()) == YEARS
+    assert "geometry" in regions
+
+
+# ------------------------------------------- no temporal aggregation --------
+
+def test_summary_to_points_keeps_every_year(setup):
+    coords, _, _ = setup
+    pts = summary_to_points(_summary(coords), VALUE_COL, 2008)
+    assert sorted(pts["year"].unique()) == YEARS
+    assert len(pts) == len(coords) * len(YEARS)
+
+
+def test_summary_to_points_preserves_year_differences(setup):
+    coords, _, _ = setup
+    yf = {2008: 1.0, 2009: 1.5, 2010: 0.5}
+    pts = summary_to_points(_summary(coords, year_factor=yf), VALUE_COL, 2008)
+    m = pts.groupby("year")["val"].mean()
+    assert m.loc[2009] > m.loc[2008] > m.loc[2010]
+
+
+def test_year_from_harvest_date(setup):
+    coords, _, _ = setup
+    pts = summary_to_points(_summary(coords, with_harvest=True), VALUE_COL, None)
+    assert sorted(pts["year"].unique()) == YEARS
+
+
+def test_year_falls_back_to_season(setup):
+    coords, _, _ = setup
+    pts = summary_to_points(_summary(coords, with_harvest=False), VALUE_COL, 2008)
+    assert sorted(pts["year"].unique()) == YEARS
+
+
+def test_year_undeterminable_raises(setup):
+    coords, _, _ = setup
+    summ = [d.drop(columns=["Season"])
+            for d in _summary(coords, with_harvest=False)]
+    with pytest.raises(KeyError):
+        summary_to_points(summ, VALUE_COL, None)
+
+
+def test_summary_to_grid_has_year_dim(setup):
+    coords, _, _ = setup
+    assert summary_to_grid(_summary(coords), VALUE_COL, 2008).dims == \
+        ("year", "y", "x")
+
+
+# --------------------------------------------------------- scaling ----------
+
+def test_scale_global_factor_differs_per_year(setup, tmp_path):
+    coords, _, out = setup
+    yf = {2008: 1.3, 2009: 0.8, 2010: 1.1}
+    ref = tmp_path / "ref_yf.geojson"
+    _write_reference(ref, coords, yf)
+    cfg = _cfg(str(ref), out, scale_mode="global")
+    r = run_correction(FakeProcessor(cfg, {}, LOG), _summary(coords), coords)
+    for yr in YEARS:
+        assert float(r["factor"].loc[yr]) == pytest.approx(yf[yr], rel=1e-6)
+
+
+def test_scale_output_grid_and_county_table(setup):
+    coords, ref, out = setup
+    cfg = _cfg(ref, out, scale_mode="global")
+    r = run_correction(FakeProcessor(cfg, {}, LOG), _summary(coords), coords)
+    assert r["corrected"].dims == ("year", "y", "x")
+    saved = xr.open_dataarray(Path(out) / "yield_scaled.nc")
+    assert list(saved["year"].values) == YEARS
+    assert (Path(out) / "yield_scaled_regions.csv").exists()
+    assert {"year", "region_id", "model", "ref", "weight"} <= set(
+        r["county_table"].columns)
+
+
+def test_scale_local_factor_per_county(setup, tmp_path):
+    coords, _, out = setup
+    ref = tmp_path / "ref_l.geojson"
+    _write_reference(ref, coords, {2008: 1.3, 2009: 0.8, 2010: 1.1})
+    cfg = _cfg(str(ref), out, scale_mode="local")
+    r = run_correction(FakeProcessor(cfg, {}, LOG), _summary(coords), coords)
+    assert list(r["stats_per_year"].index) == YEARS
+    assert r["stats"]["rmse"] == pytest.approx(0.0, abs=1e-9)
 
 
 def test_off_returns_none(setup):
@@ -84,114 +263,66 @@ def test_off_returns_none(setup):
     assert run_correction(p, _summary(coords), coords) is None
 
 
-# --------------------------------------------------------- scaling ----------
-
-def test_scale_global_recovers_factor(setup):
-    coords, ref, out = setup
-    cfg = {"correction": {"method": "scale", "reference_path": ref,
-                          "scale_mode": "global", "output_name": "s.nc"},
-           "output_dir": out}
-    p = FakeProcessor(cfg, {}, LOG)
-    r = run_correction(p, _summary(coords, ccx=0.91), coords)   # model 1.3x high
-    assert r["factor_mean"] == pytest.approx(0.7 / 0.91, rel=0.02)
-
-
-def test_scale_local_near_exact(setup):
-    coords, ref, out = setup
-    cfg = {"correction": {"method": "scale", "reference_path": ref,
-                          "scale_mode": "local", "output_name": "l.nc"},
-           "output_dir": out}
-    p = FakeProcessor(cfg, {}, LOG)
-    r = run_correction(p, _summary(coords, ccx=0.91), coords)
-    assert r["stats"]["rmse"] < 1e-6
-
-
 # --------------------------------------------------------- calibration ------
 
-def test_calibrate_recovers_parameter(setup):
+def test_calibration_override_empty_for_scale(setup):
     coords, ref, out = setup
-    cfg = {"correction": {"method": "calibrate", "reference_path": ref,
-                          "lever": "canopy", "search_sample": 40,
-                          "output_name": "c.nc"},
-           "output_dir": out, "crop": "Maize"}
-    p = FakeProcessor(cfg, {}, LOG)
-    r = run_correction(p, _summary(coords, ccx=0.96), coords)   # biased baseline
-    assert r["parameter"] == "CCx"
-    assert r["value"] == pytest.approx(0.70, abs=0.02)
+    assert calibration_override(_cfg(ref, out), FakeProcessor, {}, coords,
+                                LOG) == {}
 
 
-def test_calibrate_writes_output(setup):
-    import os
+def test_calibration_override_returns_parameter(setup):
     coords, ref, out = setup
-    cfg = {"correction": {"method": "calibrate", "reference_path": ref,
-                          "lever": "biomass", "search_sample": 30,
-                          "output_name": "cal.nc"},
-           "output_dir": out}
-    p = FakeProcessor(cfg, {}, LOG)
-    run_correction(p, _summary(coords, 0.8), coords)
-    assert os.path.exists(os.path.join(out, "cal.nc"))
+    cfg = _cfg(ref, out, method="calibrate", lever="canopy", search_sample=40)
+    over = calibration_override(cfg, FakeProcessor, {}, coords, LOG)
+    assert over["crop_param_override"]["CCx"] == pytest.approx(0.70, abs=0.02)
 
 
-# --------------------------------------------------------- helpers ----------
+def test_calibration_uses_exactly_one_full_run(setup):
+    coords, ref, out = setup
+    CountingProcessor.calls = {"full": 0, "search": 0}
+    CountingProcessor.n_full_total = len(coords)
+    cfg = _cfg(ref, out, method="calibrate", lever="canopy", search_sample=40)
+    cfg.update(calibration_override(cfg, CountingProcessor, {}, coords, LOG))
+    proc = CountingProcessor(cfg, {}, LOG)
+    summary_results, _ = proc.run_parallel(coords)
+    result = run_correction(proc, summary_results, coords)
+    assert CountingProcessor.calls["full"] == 1
+    assert CountingProcessor.calls["search"] > 1
+    assert result["value"] == pytest.approx(0.70, abs=0.02)
+    assert list(result["stats_per_year"].index) == YEARS
 
-def test_points_to_reference_handles_subsample(setup):
-    coords, ref, _ = setup
-    reference = xr.open_dataarray(ref)
-    sub = _coords().sample(20, random_state=1)
-    pts = summary_to_points(_summary(sub, 0.7), "Dry yield (tonne/ha)")
-    m_ref = points_to_reference(pts, reference)
-    # aggregation lands on the reference grid, some cells populated
-    assert m_ref.dims == ("y", "x")
-    assert np.isfinite(m_ref.values).any()
+
+def test_run_correction_reports_without_researching(setup):
+    coords, ref, out = setup
+    CountingProcessor.calls = {"full": 0, "search": 0}
+    CountingProcessor.n_full_total = len(coords)
+    cfg = _cfg(ref, out, method="calibrate", lever="canopy", search_sample=40)
+    cfg["crop_param_override"] = {"CCx": 0.70}
+    proc = CountingProcessor(cfg, {}, LOG)
+    r = run_correction(proc, _summary(coords, scale=1.0), coords)
+    assert CountingProcessor.calls == {"full": 0, "search": 0}
+    assert r["value"] == pytest.approx(0.70)
 
 
-# --------------------------------------------------------- reuse flag -------
-# correction.reuse_results scales an already-saved run without re-simulating.
-# A FakeProcessor here would mask a regression: these tests must fail if the
-# reuse path ever calls run_parallel, so no simulation stand-in is provided.
+# --------------------------------------------------------- reuse ------------
 
 def _save_summary(out_dir, summary, stamp="20260807_120000"):
-    """Write a summary pickle the way ParallelProcessor.save_results does."""
-    import pickle
     path = Path(out_dir) / f"summary_results_{stamp}.pkl"
     with open(path, "wb") as f:
         pickle.dump(summary, f, pickle.HIGHEST_PROTOCOL)
     return path
 
 
-def _reuse_cfg(ref, out, **over):
-    corr = {"method": "scale", "reference_path": ref, "scale_mode": "local",
-            "reuse_results": "latest", "output_name": "reused.nc"}
-    corr.update(over)
-    return {"output_dir": out, "correction": corr}
-
-
-def test_should_reuse_false_by_default(setup):
-    _, ref, out = setup
+def test_should_reuse_flags(setup):
+    coords, ref, out = setup
+    assert should_reuse(_cfg(ref, out)) is False
+    assert should_reuse(_cfg(ref, out, reuse_results="latest")) is True
     assert should_reuse({"output_dir": out,
-                         "correction": {"method": "scale",
-                                        "reference_path": ref}}) is False
+                         "correction": {"method": None}}) is False
 
 
-def test_should_reuse_false_when_correction_off(setup):
-    _, _, out = setup
-    assert should_reuse({"output_dir": out, "correction": {"method": None}}) is False
-    assert should_reuse({"output_dir": out}) is False
-
-
-def test_should_reuse_true_when_flag_set(setup):
-    _, ref, out = setup
-    assert should_reuse(_reuse_cfg(ref, out)) is True
-
-
-def test_calibrate_plus_reuse_rejected(setup):
-    _, ref, _ = setup
-    with pytest.raises(ValueError, match="reuse_results"):
-        normalise_correction({"method": "calibrate", "reference_path": ref,
-                              "lever": "canopy", "reuse_results": "latest"})
-
-
-def test_find_latest_summary_picks_newest(setup, tmp_path):
+def test_find_latest_summary_picks_newest(setup):
     coords, _, out = setup
     _save_summary(out, _summary(coords), stamp="20260101_000000")
     newest = _save_summary(out, _summary(coords), stamp="20260807_235959")
@@ -205,35 +336,22 @@ def test_find_latest_summary_raises_when_absent(tmp_path):
 
 def test_load_saved_summary_roundtrip(setup):
     coords, ref, out = setup
-    _save_summary(out, _summary(coords, ccx=0.91))
-    loaded = load_saved_summary(_reuse_cfg(ref, out), LOG)
-    assert isinstance(loaded, list)
-    assert "Dry yield (tonne/ha)" in loaded[0].columns
+    _save_summary(out, _summary(coords))
+    loaded = load_saved_summary(_cfg(ref, out, reuse_results="latest"), LOG)
+    assert VALUE_COL in loaded[0].columns
 
 
-def test_correct_saved_run_recovers_factor(setup):
-    """Global scaling of a saved, deliberately biased run recovers the factor
-    with no simulation at all."""
-    coords, ref, out = setup
-    _save_summary(out, _summary(coords, ccx=0.91))          # model 1.3x high
-    r = correct_saved_run(_reuse_cfg(ref, out, scale_mode="global"), logger=LOG)
-    assert r["factor_mean"] == pytest.approx(0.7 / 0.91, rel=0.02)
-
-
-def test_correct_saved_run_local_and_writes_output(setup):
-    import os
-    coords, ref, out = setup
-    _save_summary(out, _summary(coords, ccx=0.91))
-    r = correct_saved_run(_reuse_cfg(ref, out), logger=LOG)
-    assert r["stats"]["rmse"] < 1e-6
-    assert os.path.exists(os.path.join(out, "reused.nc"))
-
-
-def test_correct_saved_run_explicit_path(setup):
-    coords, ref, out = setup
-    path = _save_summary(out, _summary(coords, ccx=0.91))
-    r = correct_saved_run(_reuse_cfg(ref, out, reuse_results=str(path)), logger=LOG)
-    assert r["factor_mean"] == pytest.approx(0.7 / 0.91, rel=0.02)
+def test_correct_saved_run_per_year_no_simulation(setup, tmp_path):
+    coords, _, out = setup
+    yf = {2008: 1.3, 2009: 0.8, 2010: 1.1}
+    ref = tmp_path / "ref_reuse.geojson"
+    _write_reference(ref, coords, yf)
+    _save_summary(out, _summary(coords))
+    cfg = _cfg(str(ref), out, scale_mode="global", reuse_results="latest")
+    r = correct_saved_run(cfg, logger=LOG)
+    for yr in YEARS:
+        assert float(r["factor"].loc[yr]) == pytest.approx(yf[yr], rel=1e-6)
+    assert (Path(out) / "yield_scaled.nc").exists()
 
 
 def test_correct_saved_run_returns_none_when_off(setup):
@@ -241,84 +359,3 @@ def test_correct_saved_run_returns_none_when_off(setup):
     _save_summary(out, _summary(coords))
     assert correct_saved_run({"output_dir": out,
                               "correction": {"method": None}}, logger=LOG) is None
-
-
-# ------------------------------------------- calibration runs search first ---
-# The search must happen BEFORE the full simulation so the expensive full-grid
-# run happens exactly once, with the calibrated parameter already applied.
-
-class CountingProcessor(FakeProcessor):
-    """Records how many full-grid vs subsample run_parallel calls happen."""
-    calls = None          # set to {"full": 0, "search": 0} by the test
-
-    def __init__(self, config, validated_inputs, logger, n_full=None):
-        super().__init__(config, validated_inputs, logger)
-        self.n_full = n_full
-
-    def run_parallel(self, coords_df):
-        n_full = self.n_full or type(self).n_full_total
-        key = "full" if len(coords_df) == n_full else "search"
-        type(self).calls[key] += 1
-        return super().run_parallel(coords_df)
-
-
-def test_calibration_override_empty_for_scale(setup):
-    coords, ref, out = setup
-    cfg = {"output_dir": out,
-           "correction": {"method": "scale", "reference_path": ref}}
-    assert calibration_override(cfg, FakeProcessor, {}, coords, LOG) == {}
-
-
-def test_calibration_override_empty_when_off(setup):
-    coords, _, out = setup
-    assert calibration_override({"output_dir": out,
-                                 "correction": {"method": None}},
-                                FakeProcessor, {}, coords, LOG) == {}
-
-
-def test_calibration_override_returns_parameter(setup):
-    coords, ref, out = setup
-    cfg = {"output_dir": out,
-           "correction": {"method": "calibrate", "reference_path": ref,
-                          "lever": "canopy", "search_sample": 30}}
-    over = calibration_override(cfg, FakeProcessor, {}, coords, LOG)
-    assert set(over) == {"crop_param_override"}
-    assert over["crop_param_override"]["CCx"] == pytest.approx(0.70, abs=0.02)
-
-
-def test_calibration_uses_exactly_one_full_run(setup):
-    """The whole point of phase-1: search on a subsample, then ONE full run."""
-    coords, ref, out = setup
-    CountingProcessor.calls = {"full": 0, "search": 0}
-    CountingProcessor.n_full_total = len(coords)
-    cfg = {"output_dir": out,
-           "correction": {"method": "calibrate", "reference_path": ref,
-                          "lever": "canopy", "search_sample": 30,
-                          "output_name": "phase1.nc"}}
-    # mirror run_aquacrop.main(): search first, then the single full run
-    cfg.update(calibration_override(cfg, CountingProcessor, {}, coords, LOG))
-    proc = CountingProcessor(cfg, {}, LOG)
-    summary_results, _ = proc.run_parallel(coords)
-    result = run_correction(proc, summary_results, coords)
-
-    assert CountingProcessor.calls["full"] == 1
-    assert CountingProcessor.calls["search"] > 1          # the search happened
-    assert result["value"] == pytest.approx(0.70, abs=0.02)
-
-
-def test_run_correction_reports_without_researching(setup):
-    """With crop_param_override already set, run_correction must NOT re-search:
-    it reports on the supplied summary only."""
-    coords, ref, out = setup
-    CountingProcessor.calls = {"full": 0, "search": 0}
-    CountingProcessor.n_full_total = len(coords)
-    cfg = {"output_dir": out,
-           "correction": {"method": "calibrate", "reference_path": ref,
-                          "lever": "canopy", "search_sample": 30,
-                          "output_name": "reportonly.nc"},
-           "crop_param_override": {"CCx": 0.70}}
-    proc = CountingProcessor(cfg, {}, LOG)
-    result = run_correction(proc, _summary(coords, ccx=0.70), coords)
-    assert CountingProcessor.calls == {"full": 0, "search": 0}   # no re-running
-    assert result["value"] == pytest.approx(0.70)
-    assert result["stats"]["rmse"] < 1e-6

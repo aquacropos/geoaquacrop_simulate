@@ -1,35 +1,36 @@
 """
 yield_correction.py — numerical primitives for rough yield bias-correction and
-single-parameter calibration in aquacropgrid-run.
+single-parameter calibration in geoaquacrop-sim.
 
 Design rules (deliberate, not configurable):
 
   * NO TEMPORAL AGGREGATION. Every quantity carries a `year`. Scaling factors
     are fitted and applied per year. Calibration fits ONE parameter across all
     years (a crop parameter is not a per-year quantity), but its objective runs
-    over every (year, county) pair without averaging years first. All reported
+    over every (year, region) pair without averaging years first. All reported
     output keeps the year dimension.
 
   * THE MODEL IS AGGREGATED TO THE REFERENCE'S NATIVE SUPPORT. The reference is
-    county polygons with a yield per county per year; it is never rasterised.
-    Simulation cells are assigned to the county containing their centre and
+    region polygons with a yield per region per year; it is never rasterised.
+    Simulation cells are assigned to the region containing their centre and
     combined as an AREA-WEIGHTED mean (weights proportional to cos(latitude),
     the cell-area factor on a regular lat/lon grid). Comparison, factors and
-    the calibration objective all live at county scale.
+    the calibration objective all live at region scale.
 
   * CORRECTED OUTPUT STAYS ON THE SIMULATION GRID. Only the correction is
-    derived at county scale; it is applied back to the fine grid.
+    derived at region scale; it is applied back to the fine grid.
 
-Data model:
+Data model::
     model points : tidy DataFrame [year, y, x, val]
-    assignment   : tidy DataFrame [y, x, fips]  (unique simulation cells)
-    reference    : tidy DataFrame [fips, year, ref]
-    county table : tidy DataFrame [year, fips, model, ref, weight, ...]
+    assignment   : tidy DataFrame [y, x, region_id]  (unique simulation cells)
+    reference    : tidy DataFrame [region_id, year, ref]
+    region table : tidy DataFrame [year, region_id, model, ref, weight, ...]
     corrected    : xarray.DataArray (year, y, x) on the simulation grid
 
-Levers for calibration (measured to give a reliable, monotonic yield response):
+Levers for calibration (measured to give a reliable, monotonic yield response)::
     canopy  -> CCx (maximum canopy cover)
     biomass -> WP  (normalised water productivity)
+
 CGC is not offered (yield is insensitive to it once canopy reaches CCx before
 season end); harvest index is excluded as the least defensible lever.
 """
@@ -75,15 +76,15 @@ def as_points(source):
     return source if isinstance(source, pd.DataFrame) else grid_to_points(source)
 
 
-# --------------------------------------------------------- county support ---
+# --------------------------------------------------------- region support ---
 
-def county_assignment(points, counties):
-    """Assign each unique simulation cell to the county containing its centre.
+def region_assignment(points, regions):
+    """Assign each unique simulation cell to the region containing its centre.
 
     points   : tidy points (only y/x are used)
-    counties : GeoDataFrame with a 'fips' column, EPSG:4326
+    regions : GeoDataFrame with a 'region_id' column, EPSG:4326
 
-    Returns a DataFrame [y, x, fips]; cells outside every county are dropped.
+    Returns a DataFrame [y, x, region_id]; cells outside every region are dropped.
     Computed once per cell set and reused across calibration iterations, since
     the geometry does not change with the trial parameter.
     """
@@ -93,38 +94,38 @@ def county_assignment(points, counties):
     gdf = gpd.GeoDataFrame(cells,
                            geometry=gpd.points_from_xy(cells["x"], cells["y"]),
                            crs=4326)
-    joined = gpd.sjoin(gdf, counties[["fips", "geometry"]], how="left",
+    joined = gpd.sjoin(gdf, regions[["region_id", "geometry"]], how="left",
                        predicate="within")
     joined = joined[~joined.index.duplicated(keep="first")]
-    out = joined[["y", "x", "fips"]].dropna(subset=["fips"])
+    out = joined[["y", "x", "region_id"]].dropna(subset=["region_id"])
     return out.reset_index(drop=True)
 
 
-def aggregate_to_counties(source, assignment):
-    """Area-weighted aggregation of model values to counties, per year.
+def aggregate_to_regions(source, assignment):
+    """Area-weighted aggregation of model values to regions, per year.
 
-    Returns a DataFrame [year, fips, model, weight] where `weight` is the summed
-    cos(latitude) of the contributing simulation cells -- i.e. the county's
-    simulated area, used later to weight county-level statistics.
+    Returns a DataFrame [year, region_id, model, weight] where `weight` is the summed
+    cos(latitude) of the contributing simulation cells -- i.e. the region's
+    simulated area, used later to weight region-level statistics.
     """
     points = as_points(source)
     df = points.merge(assignment, on=["y", "x"], how="inner")
     if df.empty:
-        return pd.DataFrame(columns=["year", "fips", "model", "weight"])
+        return pd.DataFrame(columns=["year", "region_id", "model", "weight"])
     df = df.assign(_w=area_weights(df["y"].values))
     df["_wv"] = df["_w"] * df["val"].astype(float)
-    g = df.groupby(["year", "fips"])[["_w", "_wv"]].sum()
+    g = df.groupby(["year", "region_id"])[["_w", "_wv"]].sum()
     out = (g["_wv"] / g["_w"]).rename("model").reset_index()
     out["weight"] = g["_w"].values
     return out
 
 
 def join_reference(county_model, reference):
-    """Inner-join aggregated model to the reference on (year, fips)."""
+    """Inner-join aggregated model to the reference on (year, region_id)."""
     ref = reference.rename(columns={"value": "ref"}) if "value" in reference \
         else reference
-    out = county_model.merge(ref[["year", "fips", "ref"]],
-                             on=["year", "fips"], how="inner")
+    out = county_model.merge(ref[["year", "region_id", "ref"]],
+                             on=["year", "region_id"], how="inner")
     return out.dropna(subset=["model", "ref"])
 
 
@@ -140,10 +141,10 @@ def _wstats(d, w):
 
 
 def fit_stats(table):
-    """Area-weighted agreement statistics from a joined county table.
+    """Area-weighted agreement statistics from a joined region table.
 
     Returns {'per_year': DataFrame indexed by year, 'overall': dict}. Counties
-    are weighted by their simulated area, so a county with a handful of
+    are weighted by their simulated area, so a region with a handful of
     simulated cells does not count the same as a large one.
     """
     rows = []
@@ -158,7 +159,7 @@ def fit_stats(table):
 
 
 def _weighted_sse(table):
-    """Area-weighted sum of squared differences over every (year, county) pair.
+    """Area-weighted sum of squared differences over every (year, region) pair.
     Years are never averaged before differencing."""
     if table.empty:
         return np.inf
@@ -170,17 +171,17 @@ def _weighted_sse(table):
 # --------------------------------------------------------- scaling ----------
 
 def scale_to_reference(source, reference, assignment, mode="global"):
-    """Per-year multiplicative bias correction, derived at county scale.
+    """Per-year multiplicative bias correction, derived at region scale.
 
     mode="global"  one factor PER YEAR for the whole domain.
-    mode="local"   one factor PER YEAR PER COUNTY, applied to that county's
+    mode="local"   one factor PER YEAR PER REGION, applied to that region's
                    simulation cells.
 
     The corrected field is returned on the simulation grid.
     """
     points = as_points(source)
     grid = points_to_grid(points)
-    county_model = aggregate_to_counties(points, assignment)
+    county_model = aggregate_to_regions(points, assignment)
     table = join_reference(county_model, reference)
 
     if mode == "global":
@@ -191,14 +192,14 @@ def scale_to_reference(source, reference, assignment, mode="global"):
         table = table.merge(factor, left_on="year", right_index=True)
     elif mode == "local":
         table = table.assign(factor=table["ref"] / table["model"])
-        factor = table.set_index(["year", "fips"])["factor"]
+        factor = table.set_index(["year", "region_id"])["factor"]
     else:
         raise ValueError("mode must be 'global' or 'local'")
 
     corrected = _apply_factor(grid, points, assignment, table, mode)
 
-    # the factor is constant within a county and the aggregation is a weighted
-    # mean (linear), so the corrected county mean is exactly model x factor
+    # the factor is constant within a region and the aggregation is a weighted
+    # mean (linear), so the corrected region mean is exactly model x factor
     table["corrected"] = table["model"] * table["factor"]
     table["residual"] = table["corrected"] - table["ref"]
     stats = fit_stats(table.assign(model=table["corrected"]))
@@ -211,7 +212,7 @@ def scale_to_reference(source, reference, assignment, mode="global"):
 
 
 def _apply_factor(grid, points, assignment, table, mode):
-    """Multiply the simulation grid by the per-year (and per-county) factor."""
+    """Multiply the simulation grid by the per-year (and per-region) factor."""
     if mode == "global":
         per_year = table.groupby("year")["factor"].first()
         f = xr.DataArray(per_year.to_numpy(float),
@@ -219,8 +220,8 @@ def _apply_factor(grid, points, assignment, table, mode):
                          dims=("year",))
         return grid * f
     cell_factor = (points.merge(assignment, on=["y", "x"], how="left")
-                         .merge(table[["year", "fips", "factor"]],
-                                on=["year", "fips"], how="left"))
+                         .merge(table[["year", "region_id", "factor"]],
+                                on=["year", "region_id"], how="left"))
     cell_factor["factor"] = cell_factor["factor"].fillna(1.0)
     f = (cell_factor.set_index(["year", "y", "x"])["factor"].to_xarray())
     return grid * f.reindex_like(grid).fillna(1.0)
@@ -250,8 +251,8 @@ def _golden(f, a, b, tol, max_iter):
 
 def calibrate_to_reference(runner, reference, assignment, lever="canopy",
                            bounds=None, tol=1e-3, max_iter=20):
-    """Fit ONE crop parameter so county-aggregated model yield matches the
-    reference, scored over every (year, county) pair.
+    """Fit ONE crop parameter so region-aggregated model yield matches the
+    reference, scored over every (year, region) pair.
 
     runner(value) -> tidy model points from a run with the parameter set.
     """
@@ -262,13 +263,13 @@ def calibrate_to_reference(runner, reference, assignment, lever="canopy",
 
     def objective(p):
         table = join_reference(
-            aggregate_to_counties(runner(p), assignment), reference)
+            aggregate_to_regions(runner(p), assignment), reference)
         return _weighted_sse(table)
 
     best = _golden(objective, lo, hi, tol * (hi - lo), max_iter)
 
     points = as_points(runner(best))
-    table = join_reference(aggregate_to_counties(points, assignment), reference)
+    table = join_reference(aggregate_to_regions(points, assignment), reference)
     table["residual"] = table["model"] - table["ref"]
     stats = fit_stats(table)
     return {"lever": lever,
