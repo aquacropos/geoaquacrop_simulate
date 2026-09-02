@@ -85,13 +85,13 @@ def main():
     #   PaddyRice1, PaddyRice2           (first / second rice season)
     #   Wheat_summer, Wheat_winter       (spring-sown / autumn-sown wheat)
     config_dict = {
-        'weather_path': '../../../aquacropgrid-preproc/processed',
-        'soil_path': '../../../aquacropgrid-preproc/processed',
-        'pheno_path': '../../../aquacropgrid-preproc/processed',
-        'spam_path': '../../../aquacropgrid-preproc/processed',
-        'start_date': '2008/01/01',
-        'end_date': '2010/12/31',
-        'crop': 'Maize',
+        'weather_path': '../01_geoaquacrop-preproc-dev/processed',
+        'soil_path': '../01_geoaquacrop-preproc-dev/processed',
+        'pheno_path': '../01_geoaquacrop-preproc-dev/processed',
+        'spam_path': '../01_geoaquacrop-preproc-dev/processed',
+        'start_date': '2011/01/01',
+        'end_date': '2013/12/31',
+        'crop': 'Wheat_winter',
         'irrigation': 'rainfed',
         'initial_water_content': InitialWaterContent(
             wc_type='Prop',
@@ -100,16 +100,16 @@ def main():
             value=['FC', 'FC']),   # %
         'output_dir': 'outputs',
         'correction': {
-            'method': None,            # None (off) | 'scale' | 'calibrate'
-            'reference_path': '../../reference/high_plains_maize_reference.nc',    # e.g. 'reference/spam_yield.nc' (or a DataArray)
-            'reference_var': "maize_yield_dry_tha",     # variable name if the file is a Dataset
+            'method': 'calibrate',            # None (off) | 'scale' | 'calibrate'
+            'reference_path': 'reference/castillayleon/reference_castillayleon.geojson',    # e.g. 'reference/spam_yield.nc' (or a DataArray)
+            'reference_var': "yield_rainfed_t_ha",     # variable name if the file is a Dataset
             'value_col': 'Dry yield (tonne/ha)',
-            'scale_mode': 'local',    # scale:     'global' | 'local'
+            'scale_mode': 'global',    # scale:     'global' | 'local'
             'lever': 'canopy',         # calibrate: 'canopy' (CCx) | 'biomass' (WP)
             'bounds': None,            # optional (lo, hi) search bounds
-            'search_sample': 200,      # cells subsampled for the calibration search
+            'search_sample': 100,      # cells subsampled for the calibration search
             'reuse_results': None,    # <-- None (normal run) | 'latest' | path to a .pkl
-            'output_name': 'yield_uncorrected.nc',
+            'output_name': 'yield_calibrated_global.nc',
         },
     }
     

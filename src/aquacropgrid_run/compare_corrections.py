@@ -205,7 +205,12 @@ def main(argv=None):
     if not runs:
         ap.error("supply at least one of --calibrated / --scaled / --summary")
 
-    years = sorted(reference["year"].unique().tolist())
+    model_years = set.intersection(*[{int(y) for y in g["year"].values}
+                                     for _, g in runs])
+    years = sorted({int(y) for y in reference["year"].unique()} & model_years)
+    if not years:
+        ap.error("no years in common between the reference and the model runs")
+    print(f"Years plotted: {years}")
 
     # one cell->region assignment, reused for every run
     assignment = region_assignment(grid_to_points(runs[0][1]), regions)
