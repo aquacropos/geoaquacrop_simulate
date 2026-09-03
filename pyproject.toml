@@ -3,8 +3,8 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "geoaquacrop-sim"
-version = "0.1.0.dev0"            # dev marker; bump to 0.1.0 for the first real release
+name = "geoaquacrop_simulate"
+version = "0.1.0b1"              # beta; pip needs --pre to install it
 description = "Gridded AquaCrop-OSPy simulation runner"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,10 +31,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
-plots = ["plotly", "dash"]       # only needed for plots.py / the dashboard
+correction = ["geopandas", "matplotlib"]   # yield correction + comparison figures
+docs = ["sphinx>=7", "furo"]
 
 [project.scripts]
-geoaquacrop-sim = "geoaquacrop_sim.run_aquacrop:main"
+geoaquacrop_simulate = "geoaquacrop_simulate.run_aquacrop:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

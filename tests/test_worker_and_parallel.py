@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from geoaquacrop_sim.config import SimulationConfig
-from geoaquacrop_sim.processor import DataLoader, ParallelProcessor, worker_run
+from geoaquacrop_simulate.config import SimulationConfig
+from geoaquacrop_simulate.processor import DataLoader, ParallelProcessor, worker_run
 
 
 @pytest.fixture

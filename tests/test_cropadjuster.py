@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from aquacrop import Crop
-from geoaquacrop_sim.processor import CropAdjuster
+from geoaquacrop_simulate.processor import CropAdjuster
 
 
 def _fresh_maize():

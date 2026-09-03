@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from geoaquacrop_sim.config import SimulationConfig, InputValidator
-from geoaquacrop_sim.processor import DataLoader
+from geoaquacrop_simulate.config import SimulationConfig, InputValidator
+from geoaquacrop_simulate.processor import DataLoader
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ class TestLoadSoil:
         # write a soil set with NaN in the top layer at the target cell
         import xarray as xr
         d = tmp_path / "s"; d.mkdir()
-        from geoaquacrop_sim.config import InputRequirements
+        from geoaquacrop_simulate.config import InputRequirements
         for fn in InputRequirements.SOIL_FILES:
             clay = np.full((len(grid["y"]), len(grid["x"])), 25.0, dtype="float32")
             if fn == "soil_0-5.nc":

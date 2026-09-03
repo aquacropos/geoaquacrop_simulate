@@ -9,7 +9,7 @@ fixed it will turn into an XPASS and you can drop the marker.
 """
 import pytest
 
-import geoaquacrop_sim.run_aquacrop as run_aquacrop
+import geoaquacrop_simulate.run_aquacrop as run_aquacrop
 
 
 @pytest.mark.xfail(reason="BUG: SOIL_FILES is a list but print_input_requirements calls .items()",

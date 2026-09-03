@@ -75,7 +75,7 @@ def print_input_requirements():
 
 EXAMPLE_CONFIG_DOC = """Example configuration.
 
-Copy this, point the four input paths at your geoaquacrop-preproc ``processed``
+Copy this, point the four input paths at your geoaquacrop_preproc ``processed``
 folder, and pass it to :func:`run`. Available crops (case-sensitive):
 Barley, Cassava, Cotton, DryBean, Maize, Potato, Sorghum, Soybean, SugarBeet,
 SugarCane, Sunflower, PaddyRice1, PaddyRice2, Wheat_summer, Wheat_winter.

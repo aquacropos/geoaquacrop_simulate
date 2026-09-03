@@ -12,7 +12,7 @@ xr = pytest.importorskip("xarray")
 gpd = pytest.importorskip("geopandas")
 from shapely.geometry import box
 
-from geoaquacrop_sim.yield_correction import (
+from geoaquacrop_simulate.yield_correction import (
     LEVERS, area_weights, region_assignment, aggregate_to_regions,
     join_reference, scale_to_reference, calibrate_to_reference, fit_stats,
     points_to_grid, grid_to_points)

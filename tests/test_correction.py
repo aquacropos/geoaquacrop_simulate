@@ -16,11 +16,11 @@ xr = pytest.importorskip("xarray")
 gpd = pytest.importorskip("geopandas")
 from shapely.geometry import box
 
-from geoaquacrop_sim.correction import (
+from geoaquacrop_simulate.correction import (
     run_correction, normalise_correction, summary_to_points, summary_to_grid,
     load_reference, should_reuse, correct_saved_run, find_latest_summary,
     load_saved_summary, calibration_override, output_name, OUTPUT_NAMES)
-from geoaquacrop_sim.yield_correction import (region_assignment,
+from geoaquacrop_simulate.yield_correction import (region_assignment,
                                                aggregate_to_regions)
 
 LOG = logging.getLogger("test")
