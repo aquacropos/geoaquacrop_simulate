@@ -2,11 +2,12 @@
 
 The simulation stage of the GeoAquaCrop toolchain. Usable on its own::
 
-    import geoaquacrop_simulate as sim
+    import geoaquacrop_simulate as simulate
 
-    config = sim.example_config()
-    config['crop'] = 'Wheat_winter'
-    summary_file, daily_file = sim.run(config)
+    summary_file, daily_file = simulate.run(
+        data_path='/data/region/processed',
+        start_date='2011/01/01', end_date='2013/12/31',
+        crop='Wheat_winter', irrigation='rainfed')
 
 or through the unified toolchain façade, which re-exports exactly these
 names::
@@ -61,7 +62,11 @@ def __dir__():
 
 
 def example_config():
-    """Return an editable copy of the example simulation configuration."""
+    """Return the example configuration, to inspect the available settings.
+
+    Not a required step: :func:`run` takes the same settings as keyword
+    arguments. Useful for seeing every key and its default.
+    """
     import copy
     return copy.deepcopy(_import_module(f"{__name__}.run_aquacrop").EXAMPLE_CONFIG)
 

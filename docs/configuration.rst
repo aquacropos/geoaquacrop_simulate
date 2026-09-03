@@ -1,7 +1,11 @@
 Configuration reference
 =======================
 
-Everything is driven by a single ``config_dict`` passed to
+Every setting below is a keyword argument to
+:func:`~geoaquacrop_simulate.run_aquacrop.run`; a dictionary can also be passed
+as ``config=`` for programmatic use, and individual arguments then override it.
+``data_path`` is a shorthand that fills all four input paths at once.
+Internally the assembled settings are validated by
 :class:`~geoaquacrop_simulate.config.SimulationConfig`. Validation checks that all
 required keys are present and that the referenced files exist, share a grid and
 cover the requested period; unknown keys are ignored, so optional blocks can be
@@ -17,6 +21,9 @@ Simulation
    * - Parameter
      - Default
      - Description
+   * - ``data_path``
+     - *see note*
+     - Folder holding the preprocessed inputs; fills the four paths below
    * - ``weather_path``
      - *required*
      - Directory holding the climate NetCDF files
@@ -36,10 +43,10 @@ Simulation
      - *required*
      - Last day of the simulation, ``'YYYY/MM/DD'``
    * - ``crop``
-     - *required*
+     - ``'Maize'``
      - Crop name, case-sensitive (see :doc:`quickstart`)
    * - ``irrigation``
-     - *required*
+     - ``'rainfed'``
      - ``'rainfed'`` or ``'irrigated'``; selects the crop calendar and crop
        area layers
    * - ``initial_water_content``

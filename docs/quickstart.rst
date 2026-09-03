@@ -1,26 +1,36 @@
-Quick start
-===========
-
 Option A — the Python API (recommended)
 ---------------------------------------
+
+Settings are keyword arguments; there is no configuration file to prepare.
 
 .. code-block:: python
 
    import geoaquacrop_simulate as simulate
 
-   config = simulate.example_config()
-   config.update({
-       'weather_path': '/path/to/preprocess/processed',
-       'soil_path':    '/path/to/preprocess/processed',
-       'pheno_path':   '/path/to/preprocess/processed',
-       'spam_path':    '/path/to/preprocess/processed',
-       'start_date':   '2011/01/01',
-       'end_date':     '2013/12/31',
-       'crop':         'Wheat_winter',
-       'irrigation':   'rainfed',
-       'output_dir':   'outputs',
-   })
-   summary_file, daily_file = simulate.run(config)
+   summary_file, daily_file = simulate.run(
+       data_path='/path/to/preprocess/processed',
+       start_date='2011/01/01',
+       end_date='2013/12/31',
+       crop='Wheat_winter',
+       irrigation='rainfed',
+       output_dir='outputs',
+   )
+
+``data_path`` fills all four input paths at once, since they normally point at
+the same ``processed`` folder written by geoaquacrop_preprocess. Pass
+``weather_path``, ``soil_path``, ``pheno_path`` or ``spam_path`` individually
+in the rare case they differ.
+
+``crop`` defaults to ``'Maize'``, ``irrigation`` to ``'rainfed'``,
+``output_dir`` to ``'outputs'``, and the initial water content to field
+capacity through the top 2 m — so a minimal run needs only the paths, the
+dates and the crop.
+
+To see every available setting:
+
+.. code-block:: python
+
+   print(simulate.example_config())
 
 If the whole toolchain is installed, the same call is available through the
 unified façade, and the two are interchangeable:
@@ -29,7 +39,25 @@ unified façade, and the two are interchangeable:
 
    import geoaquacrop as gac
 
-   summary_file, daily_file = gac.simulate.run(config)
+   summary_file, daily_file = gac.simulate.run(
+       data_path='/path/to/preprocess/processed',
+       start_date='2011/01/01', end_date='2013/12/31',
+       crop='Wheat_winter')
+
+Adding a yield correction is one more argument:
+
+.. code-block:: python
+
+   simulate.run(
+       data_path='/path/to/preprocess/processed',
+       start_date='2011/01/01', end_date='2013/12/31',
+       crop='Wheat_winter',
+       correction={
+           'method': 'scale',
+           'reference_path': 'reference/reference.geojson',
+           'scale_mode': 'local',
+       },
+   )
 
 Option B — edit and run the script
 ----------------------------------
