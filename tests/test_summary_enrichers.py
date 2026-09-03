@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import aquacropgrid_run.summary_enrichers as se
+import geoaquacrop_sim.summary_enrichers as se
 
 
 class _Logger:

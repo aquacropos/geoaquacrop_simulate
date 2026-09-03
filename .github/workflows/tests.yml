@@ -34,7 +34,7 @@ jobs:
 
       - name: Run test suite
         run: |
-          pytest -q --cov=aquacropgrid_run --cov-report=term-missing
+          pytest -q --cov=geoaquacrop_sim --cov-report=term-missing
 
       # Optional: upload coverage to Codecov (needs the repo enabled there)
       # - name: Upload coverage

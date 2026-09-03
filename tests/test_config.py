@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from aquacropgrid_run.config import SimulationConfig, InputValidator, InputRequirements
+from geoaquacrop_sim.config import SimulationConfig, InputValidator, InputRequirements
 
 
 # ---------------------------------------------------------------------------

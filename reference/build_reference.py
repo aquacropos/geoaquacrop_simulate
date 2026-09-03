@@ -1,7 +1,7 @@
 """
 build_reference.py — build a gridded maize-yield reference for the High Plains
 from county polygons + county yields + the High Plains boundary, in the format
-aquacropgrid-run's correction expects: an (lat, lon) NetCDF DataArray of dry
+geoaquacrop-sim's correction expects: an (lat, lon) NetCDF DataArray of dry
 yield in t/ha.
 
 Sits in reference/ and reads three inputs from reference/high_plains/:

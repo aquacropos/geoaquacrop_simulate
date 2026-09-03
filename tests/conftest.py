@@ -1,7 +1,7 @@
 """
-Shared pytest fixtures for the aquacropgrid-run test suite.
+Shared pytest fixtures for the geoaquacrop-sim test suite.
 
-The package is imported as ``aquacropgrid_run.*``. Install it in editable mode
+The package is imported as ``geoaquacrop_sim.*``. Install it in editable mode
 before running the tests: ``pip install -e ".[dev]"``.
 """
 import sys
@@ -64,7 +64,7 @@ def _write_weather(directory: Path, sy: int = START_YEAR, ey: int = END_YEAR,
 
 def _write_soil(directory: Path, missing_var: bool = False):
     """Write the six soil NetCDF files with Clay/Sand/Silt/Som."""
-    from aquacropgrid_run.config import InputRequirements
+    from geoaquacrop_sim.config import InputRequirements
     for fn in InputRequirements.SOIL_FILES:
         variables = {
             "Clay": np.full((len(GRID_Y), len(GRID_X)), 25.0, dtype="float32"),
