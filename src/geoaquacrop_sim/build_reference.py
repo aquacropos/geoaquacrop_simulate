@@ -45,13 +45,13 @@ import pandas as pd
 # =============================== CONFIG =====================================
 # Defaults used when the script is run with no arguments. Override any of them
 # on the command line.
-REGIONS = "regions.geojson"      # boundary file of the reporting regions
-REGION_ID = "region"             # column in the boundary file holding the name/code
-TABLE = "yields.csv"             # statistics table (.csv or .xlsx)
+REGIONS = "../../reference/castillayleon/cyl_provinces.geojson"      # boundary file of the reporting regions
+REGION_ID = "NAME_LATN"             # column in the boundary file holding the name/code
+TABLE = "../../reference/castillayleon/castillayleon_wheat.csv"             # statistics table (.csv or .xlsx)
 TABLE_ID = "region"              # column in the table holding the same name/code
 YEAR_COL = "year"
-VALUE_COL = "yield_t_ha"         # the yield column to use as the reference
-OUT = "reference.geojson"
+VALUE_COL = "yield_rainfed_t_ha"         # the yield column to use as the reference
+OUT = "reference_castillayleon.geojson"
 YEARS = None                     # None = every year in the table, or (first, last)
 # ============================================================================
 
