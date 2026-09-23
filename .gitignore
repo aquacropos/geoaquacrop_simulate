@@ -15,3 +15,11 @@ viz/
 
 # docs build
 docs/_build/
+
+# reference data
+reference/
+*.xlsx
+*.shp
+*.dbf
+*.shx
+*.geojson
