@@ -2,7 +2,7 @@
 
 > Gridded FAO AquaCrop simulation engine for the GeoAquaCrop toolchain.
 
-![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![License](https://img.shields.io/badge/license-Apache%20License%202.0-blue)
 
 ## Overview
 

@@ -52,7 +52,7 @@ directory.
 
 .. note::
 
-   Always launch through the installed package rather than by running a file
+   Always run through the installed package rather than by running a file
    inside ``src/geoaquacrop_simulate`` directly. Executing a module as a script
    gives it no package context, so its relative imports (``from .config import
    ...``) fail with *"attempted relative import with no known parent

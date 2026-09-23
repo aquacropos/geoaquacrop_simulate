@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,16 +8,15 @@ version = "0.1.0b1"              # beta; pip needs --pre to install it
 description = "Gridded AquaCrop-OSPy simulation runner"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }       # replace with your chosen licence
-authors = [{ name = "Chris Bowden" }]
+license = "Apache-2.0"
+license-files = ["LICENSE"]     
+authors = [
+    { name = "Chris Bowden" },
+    { name = "Tim Foster" },
+    ]
 
-# ----------------------------------------------------------------------------
-# ANTI-PUBLICATION GUARD (remove this entire `classifiers` block to go live).
-# PyPI rejects any upload whose metadata contains "Private :: Do Not Upload",
-# so an accidental `twine upload` or publish workflow will fail with a 400.
-# ----------------------------------------------------------------------------
-classifiers = [
-    "Private :: Do Not Upload",
+maintainers = [
+    { name = "Chris Bowden", email = "christopher.bowden@manchester.ac.uk" },
 ]
 
 dependencies = [
