@@ -48,12 +48,13 @@ def print_input_requirements():
     print("  • Required dimensions: time, y, x")
     print("  • Coordinate system: WGS84 (EPSG:4326)")
     
-    print("\n2. SOIL DATA (GeoTIFF files in soil_path/):")
+    print("\n2. SOIL DATA (NetCDF files in soil_path/):")
     print("-" * 40)
     for filename, description in InputRequirements.SOIL_FILES.items():
         print(f"  • {filename}")
         print(f"    - Description: {description}")
     print("  • Units: Percentage (0-100)")
+    print("  • Names of variables in each NetCDF must be: Clay, Sand, Silt and Som ")
     print("  • Note: Organic matter should be pre-converted from SOC")
     print("  • Must have same grid, CRS, and spatial extent as weather data")
     
@@ -73,40 +74,22 @@ def print_input_requirements():
     print("\n" + "="*80 + "\n")
 
 
-EXAMPLE_CONFIG_DOC = """Example configuration.
-
-Copy this, point the four input paths at your geoaquacrop_preproc ``processed``
-folder, and pass it to :func:`run`. Available crops (case-sensitive):
-Barley, Cassava, Cotton, DryBean, Maize, Potato, Sorghum, Soybean, SugarBeet,
-SugarCane, Sunflower, PaddyRice1, PaddyRice2, Wheat_summer, Wheat_winter.
-"""
-
+#: A minimal illustrative configuration. `run()` takes these as keyword
+#: arguments, so this exists to show the available settings, not to be edited.
 EXAMPLE_CONFIG = {
-    'weather_path': '../../../aquacropgrid-preproc/processed',
-    'soil_path': '../../../aquacropgrid-preproc/processed',
-    'pheno_path': '../../../aquacropgrid-preproc/processed',
-    'spam_path': '../../../aquacropgrid-preproc/processed',
-    'start_date': '2008/01/01',
-    'end_date': '2010/12/31',
-    'crop': 'Maize',
-    'irrigation': 'rainfed',
-    'initial_water_content': InitialWaterContent(
-        wc_type='Prop',
-        method='Depth',
-        depth_layer=[0, 2],
-        value=['FC', 'FC']),   # %
-    'output_dir': 'outputs',
-    'correction': {
-        'method': None,            # None (off) | 'scale' | 'calibrate'
-        'reference_path': '../../reference/high_plains_maize_reference.nc',    # e.g. 'reference/spam_yield.nc' (or a DataArray)
-        'reference_var': "maize_yield_dry_tha",     # variable name if the file is a Dataset
-        'value_col': 'Dry yield (tonne/ha)',
-        'scale_mode': 'local',    # scale:     'global' | 'local'
-        'lever': 'canopy',         # calibrate: 'canopy' (CCx) | 'biomass' (WP)
-        'bounds': None,            # optional (lo, hi) search bounds
-        'search_sample': 200,      # cells subsampled for the calibration search
-        'reuse_results': None,    # <-- None (normal run) | 'latest' | path to a .pkl
-        'output_name': 'yield_uncorrected.nc',
+    "data_path": "path/to/preprocess/processed",
+    "start_date": "2011/01/01",
+    "end_date": "2013/12/31",
+    "crop": "Wheat_winter",
+    "irrigation": "rainfed",
+    "output_dir": "outputs",
+    "correction": {
+        "method": None,                          # None | 'scale' | 'calibrate'
+        "reference_path": "reference/reference.geojson",
+        "value_col": "Dry yield (tonne/ha)",
+        "scale_mode": "global",                  # 'global' | 'local'
+        "lever": "canopy",                       # 'canopy' (CCx) | 'biomass' (WP)
+        "reuse_results": None,                   # None | 'latest' | path to .pkl
     },
 }
 

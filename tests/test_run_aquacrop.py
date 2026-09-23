@@ -12,8 +12,6 @@ import pytest
 import geoaquacrop_simulate.run_aquacrop as run_aquacrop
 
 
-@pytest.mark.xfail(reason="BUG: SOIL_FILES is a list but print_input_requirements calls .items()",
-                   raises=AttributeError, strict=True)
 def test_print_input_requirements_runs(capsys):
     run_aquacrop.print_input_requirements()
     out = capsys.readouterr().out
