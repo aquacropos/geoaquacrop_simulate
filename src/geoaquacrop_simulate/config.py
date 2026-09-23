@@ -40,15 +40,16 @@ class InputRequirements:
     # Required dimensions for weather NetCDF
     WEATHER_DIMS = ['time', 'x', 'y']
     
-    # Required soil NetCDF files 
-    SOIL_FILES = [
-        'soil_0-5.nc',
-        'soil_5-15.nc',
-        'soil_15-30.nc',
-        'soil_30-60.nc',
-        'soil_60-100.nc',
-        'soil_100-200.nc'
-    ]
+    # Required soil NetCDF files, one per depth layer (cm). Each file holds the
+    # soil textures and organic matter for that layer as separate variables.
+    SOIL_FILES = {
+        'soil_0-5.nc':     'Variables Clay, Sand, Silt and Som for 0-5 cm depth',
+        'soil_5-15.nc':    'Variables Clay, Sand, Silt and Som for 5-15 cm depth',
+        'soil_15-30.nc':   'Variables Clay, Sand, Silt and Som for 15-30 cm depth',
+        'soil_30-60.nc':   'Variables Clay, Sand, Silt and Som for 30-60 cm depth',
+        'soil_60-100.nc':  'Variables Clay, Sand, Silt and Som for 60-100 cm depth',
+        'soil_100-200.nc': 'Variables Clay, Sand, Silt and Som for 100-200 cm depth',
+    }
     
     # Required phenology raster files per crop
     PHENO_PATTERNS = {
