@@ -1,17 +1,20 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "geoaquacrop_simulate"
-version = "0.1.0b1"              # beta; pip needs --pre to install it
+version = "0.1.0"              # beta; pip needs --pre to install it
 description = "Gridded AquaCrop-OSPy simulation runner"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]     
 authors = [
+    { name = "Josias Lang-Ritter" },
     { name = "Chris Bowden" },
+    { name = "Seyed Hosseini" },
+    { name = "Henrikki Tenkanen" },
     { name = "Tim Foster" },
     ]
 
