@@ -94,7 +94,7 @@ Required input files
 --------------------
 
 All must share a common grid, CRS (EPSG:4326) and spatial extent — which is
-what geoaquacrop_preproc guarantees.
+what geoaquacrop_preprocess guarantees.
 
 .. list-table::
    :header-rows: 1
@@ -150,4 +150,4 @@ Supported crop types
 
 Barley, Cassava, Cotton, Dry Bean, Maize, Paddy Rice (seasons 1 & 2), Potato,
 Sorghum, Soybean, Sugar Beet, Sugar Cane, Sunflower, Wheat (summer & winter) —
-matching the crop calendar and crop area datasets from geoaquacrop_preproc.
+matching the crop calendar and crop area datasets from geoaquacrop_preprocess.

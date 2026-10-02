@@ -33,15 +33,15 @@ autodoc_default_options = {
 # plots.py is an interactive Dash dashboard with module-level configuration and
 # side effects; importing it during a docs build would execute that setup, so it
 # is documented narratively rather than by autodoc.
-autodoc_mock_imports = []          # nothing to mock: the dashboard now lives in geoaquacrop_visualizer
+autodoc_mock_imports = []          # nothing to mock: the dashboard now lives in geoaquacrop_visualize
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
     "pandas": ("https://pandas.pydata.org/docs/", None),
     "xarray": ("https://docs.xarray.dev/en/stable/", None),
-    "preproc": (
-        "https://geoaquacrop_preprocessing.readthedocs.io/en/stable/", None),
+    "preprocess": (
+        "https://geoaquacrop-preprocessing.readthedocs.io/en/stable/", None),
 }
 
 templates_path = ["_templates"]

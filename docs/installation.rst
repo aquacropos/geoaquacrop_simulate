@@ -8,7 +8,7 @@ Prerequisites
   `Anaconda <https://www.anaconda.com/>`_
 * Python 3.11 or newer
 * Input datasets produced by
-  :doc:`geoaquacrop_preproc <preproc:index>`
+  :doc:`geoaquacrop_preprocess <preprocess:index>`
 
 Install
 -------
@@ -17,7 +17,7 @@ Install
 
    .. code-block:: bash
 
-      git clone https://github.com/<your-org>/geoaquacrop_simulate-dev
+      git clone https://github.com/aquacropos/geoaquacrop_simulate
       cd geoaquacrop_simulate-dev
 
 2. **Create and activate the conda environment:**

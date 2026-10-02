@@ -57,7 +57,7 @@ Daily results
 per cell, including canopy cover, biomass, deep percolation, runoff,
 transpiration, soil evaporation and profile water content. These feed the
 time-series panels of
-`geoaquacrop_visualizer <https://sehohosseini.github.io/geoaquacrop_visualize/>`_.
+`geoaquacrop_visualize <https://geoaquacrop-visualize.readthedocs.io/en/latest/>`_.
 
 Loading results
 ---------------
