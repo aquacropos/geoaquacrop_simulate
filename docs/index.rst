@@ -11,8 +11,8 @@ It is the middle stage of the GeoAquaCrop toolchain:
 
 .. code-block:: text
 
-   geoaquacrop_preproc  ->  geoaquacrop_simulate  ->  geoaquacrop_visualizer
-   (download & harmonise)   (simulate & correct)  (explore results)
+   geoaquacrop_preprocess  ->  geoaquacrop_simulate  ->  geoaquacrop_visualize
+   (download & harmonise)   (simulate & correct)        (explore results)
 
 What it does
 ------------

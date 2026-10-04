@@ -6,13 +6,13 @@
 
 ## Overview
 
-**geoaquacrop_simulate** runs [FAO AquaCrop](https://www.fao.org/aquacrop) over large regions in gridded format. It takes the harmonised input datasets produced by [geoaquacrop_preproc](https://github.com/josiasritter/geoaquacrop_preproc-dev), runs an independent AquaCrop simulation for every grid cell in parallel, and writes per-cell seasonal and daily results.
+**geoaquacrop_simulate** runs [FAO AquaCrop](https://www.fao.org/aquacrop) over large regions in gridded format. It takes the harmonised input datasets produced by [geoaquacrop_preproc](https://github.com/aquacropos/geoaquacrop_preprocess), runs an independent AquaCrop simulation for every grid cell in parallel, and writes per-cell seasonal and daily results. These outputs can then be visualized by [geoaquacrop_visualize](https://github.com/aquacropos/geoaquacrop_visualize).
 
 It is the middle stage of the GeoAquaCrop toolchain:
 
 ```
-geoaquacrop_preproc  ->  geoaquacrop_simulate  ->  geoaquacrop_visualizer
-(download & harmonise)   (simulate & correct)  (explore results)
+geoaquacrop_preprocess  ->  geoaquacrop_simulate  ->  geoaquacrop_visualize
+(download & harmonise)   (simulate & correct)       (explore results)
 ```
 
 | Stage | Description |
@@ -31,12 +31,12 @@ Barley, Cassava, Cotton, Dry Bean, Maize, Paddy Rice (seasons 1 & 2), Potato, So
 
 - [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda](https://www.anaconda.com/)
 - Python 3.11+
-- Input datasets produced by [geoaquacrop_preproc](https://github.com/josiasritter/geoaquacrop_preproc-dev)
+- Input datasets produced by [geoaquacrop_preproc](https://github.com/aquacropos/geoaquacrop_preprocess)
 
 ## Installation
 
 ```bash
-git clone https://github.com/<your-org>/geoaquacrop_simulate-dev
+git clone https://github.com/aquacropos/geoaquacrop_simulate
 cd geoaquacrop_simulate-dev
 conda create -n geoaquacrop python=3.11
 conda activate geoaquacrop
@@ -107,11 +107,11 @@ Optional. Brings modelled yields into line with an observational reference, per 
 }
 ```
 
-See the [yield correction guide](https://geoaquacrop_simulate.readthedocs.io/en/stable/corrections.html) for what each mode does and how to interpret the results.
+See the [yield correction guide](https://geoaquacrop-simulate.readthedocs.io/en/stable/corrections.html) for what each mode does and how to interpret the results.
 
 ## Documentation
 
-Full documentation: <https://geoaquacrop_simulate.readthedocs.io>
+Full documentation: <https://geoaquacrop-simulate.readthedocs.io>
 
 ## Tests
 
