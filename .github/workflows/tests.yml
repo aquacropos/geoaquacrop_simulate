@@ -44,7 +44,7 @@ jobs:
       # output column and the mutable planting-date lists. Fail loudly and early
       # if resolution ever lands on something older.
       - name: Report the resolved aquacrop version
-        run: python -c "import aquacrop; print('aquacrop', aquacrop.__version__)"
+        run: python -c "from importlib.metadata import version; print('aquacrop', version('aquacrop'))"
 
       - name: Run the suite
         run: >-
