@@ -6,13 +6,13 @@
 
 ## Overview
 
-**geoaquacrop_simulate** runs [FAO AquaCrop](https://www.fao.org/aquacrop) over large regions in gridded format. It takes the harmonised input datasets produced by [geoaquacrop_preproc](https://github.com/aquacropos/geoaquacrop_preprocess), runs an independent AquaCrop simulation for every grid cell in parallel, and writes per-cell seasonal and daily results. These outputs can then be visualized by [geoaquacrop_visualize](https://github.com/aquacropos/geoaquacrop_visualize).
+**geoaquacrop_simulate** runs [FAO AquaCrop](https://www.fao.org/aquacrop) over large regions in gridded format. It takes the harmonised input datasets produced by [geoaquacrop_preprocess](https://github.com/aquacropos/geoaquacrop_preprocess), runs an independent AquaCrop simulation for every grid cell in parallel, and writes per-cell seasonal and daily results. These outputs can then be visualized by [geoaquacrop_visualize](https://github.com/aquacropos/geoaquacrop_visualize).
 
 It is the middle stage of the GeoAquaCrop toolchain:
 
 ```
 geoaquacrop_preprocess  ->  geoaquacrop_simulate  ->  geoaquacrop_visualize
-(download & harmonise)   (simulate & correct)       (explore results)
+(download & harmonise)   (simulate & correct)         (explore results)
 ```
 
 | Stage | Description |
@@ -31,13 +31,13 @@ Barley, Cassava, Cotton, Dry Bean, Maize, Paddy Rice (seasons 1 & 2), Potato, So
 
 - [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda](https://www.anaconda.com/)
 - Python 3.11+
-- Input datasets produced by [geoaquacrop_preproc](https://github.com/aquacropos/geoaquacrop_preprocess)
+- Input datasets produced by [geoaquacrop_preprocess](https://github.com/aquacropos/geoaquacrop_preprocess)
 
 ## Installation
 
 ```bash
 git clone https://github.com/aquacropos/geoaquacrop_simulate
-cd geoaquacrop_simulate-dev
+cd geoaquacrop_simulate
 conda create -n geoaquacrop python=3.11
 conda activate geoaquacrop
 python -m pip install -e .
@@ -60,10 +60,10 @@ Key input arguments:
 
 ```python
 config_dict = {
-    'weather_path': '/path/to/preproc/processed',
-    'soil_path':    '/path/to/preproc/processed',
-    'pheno_path':   '/path/to/preproc/processed',
-    'spam_path':    '/path/to/preproc/processed',
+    'weather_path': '/path/to/geoaquacrop_preprocess/processed',
+    'soil_path':    '/path/to/geoaquacrop_preprocess/processed',
+    'pheno_path':   '/path/to/geoaquacrop_preprocess/processed',
+    'spam_path':    '/path/to/geoaquacrop_preprocess/processed',
     'start_date':   '2008/01/01',
     'end_date':     '2010/12/31',
     'crop':         'Maize',
@@ -121,4 +121,4 @@ python -m pytest -q
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).

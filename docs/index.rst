@@ -3,7 +3,7 @@ geoaquacrop_simulate
 
 **geoaquacrop_simulate** runs `FAO AquaCrop <https://www.fao.org/aquacrop>`_ over
 large regions in gridded format. It takes the harmonised input datasets produced
-by :doc:`geoaquacrop_preproc <preproc:index>`, runs an independent AquaCrop
+by :doc:`geoaquacrop_preprocess <preprocess:index>`, runs an independent AquaCrop
 simulation for every grid cell in parallel, and writes per-cell seasonal and
 daily results.
 
@@ -44,7 +44,7 @@ What it does
 
 Outputs are pickled ``pandas`` frames (one seasonal summary row per cell per
 season, plus daily water-balance and crop-growth series), ready for
-`geoaquacrop_visualizer <https://sehohosseini.github.io/geoaquacrop_visualize/>`_.
+`geoaquacrop_visualize <https://geoaquacrop-visualize.readthedocs.io/en/latest/>`_.
 
 .. toctree::
    :caption: Getting started

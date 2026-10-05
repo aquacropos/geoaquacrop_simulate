@@ -96,7 +96,7 @@ class InputValidator:
         Returns dict with filepath and the specific variable name for this crop+irrigation.
         """
         # Pick SPAM refyear (2010 or 2020) based on midpoint of simulation period.
-        # Matches the logic in preproc_tools.spam_refyear.
+        # Matches the logic in preprocess_tools.spam_refyear.
         avg_year = np.ceil(np.mean([start_year, end_year]))
         refyear = min([2010, 2020], key=lambda yr: abs(yr - avg_year))
     
@@ -109,7 +109,7 @@ class InputValidator:
                 f"Run preprocessing with 'crop_areas' step first."
             )
     
-        # Variable naming in preproc_spam: '{Crop}_{rf|ir}_physical_area'
+        # Variable naming in preprocess_spam: '{Crop}_{rf|ir}_physical_area'
         crop_title = crop
         irr_tag = "ir" if irrigation.lower() == "irrigated" else "rf"
         var_name = f"{crop_title}_{irr_tag}_physical_area"
