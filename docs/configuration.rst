@@ -89,8 +89,8 @@ numerically untouched. See :doc:`corrections` for what each mode does.
        ``'calibrate'`` (fit one crop parameter)
    * - ``reference_path``
      - ``None``
-     - County reference (GeoJSON) with ``fips`` and ``yield_<year>`` fields,
-       written by ``reference/build_reference.py``
+     - Region reference (GeoJSON) with ``region_id`` and ``yield_<year>``
+       fields, written by :mod:`~geoaquacrop_simulate.build_reference`
    * - ``value_col``
      - ``'Dry yield (tonne/ha)'``
      - Summary column to correct; must match the reference's units

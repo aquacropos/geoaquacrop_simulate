@@ -173,9 +173,11 @@ def _weighted_sse(table):
 def scale_to_reference(source, reference, assignment, mode="global"):
     """Per-year multiplicative bias correction, derived at region scale.
 
-    mode="global"  one factor PER YEAR for the whole domain.
-    mode="local"   one factor PER YEAR PER REGION, applied to that region's
-                   simulation cells.
+    ``mode="global"``
+        One factor per year for the whole domain.
+    ``mode="local"``
+        One factor per year per region, applied to that region's simulation
+        cells.
 
     The corrected field is returned on the simulation grid.
     """

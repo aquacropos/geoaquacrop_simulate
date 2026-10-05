@@ -53,18 +53,41 @@ comparison table is written alongside as CSV.
 Building the reference
 ----------------------
 
-``reference/build_reference.py`` turns county boundaries, a USDA NASS county
-yield table and a region boundary into the reference file:
+``build_reference`` joins any boundary file of reporting regions to any table
+of yields per region per year. Nothing about the country, the administrative
+level or the data source is assumed -- counties, provinces and districts all
+work the same way:
 
 .. code-block:: bash
 
-   cd reference
-   python build_reference.py
+   python -m geoaquacrop_simulate.build_reference \
+       --regions provinces.geojson --region-id NAME_LATN \
+       --table wheat_yields.csv --table-id region \
+       --year-col year --value-col yield_t_ha \
+       --out reference.geojson
 
-It writes one GeoJSON feature per county with a ``yield_<year>`` field per year,
-converting USDA bushels/acre at 15.5 % moisture to dry-matter t/ha. No
-rasterisation happens at any stage, so the reference carries exactly the
-information USDA published: one number per county per year.
+or from Python:
+
+.. code-block:: python
+
+   import geoaquacrop as gac
+
+   gac.simulate.build_reference(
+       regions='provinces.geojson', region_id='NAME_LATN',
+       table='wheat_yields.csv', table_id='region',
+       year_col='year', value_col='yield_t_ha', out='reference.geojson')
+
+It writes one GeoJSON feature per region, carrying ``region_id`` and a
+``yield_<year>`` field per year. Join keys are matched case-, accent- and
+whitespace-insensitively, and regions that fail to match are reported rather
+than silently dropped -- an unmatched region is the usual reason for an
+all-NaN reference.
+
+Values are written in the units of the input table, so convert to the units of
+the summary column being corrected (by default dry-matter t/ha) before
+building. No rasterisation happens at any stage, so the reference carries
+exactly the information the statistical agency published: one number per
+region per year.
 
 Scaling
 -------
@@ -178,22 +201,24 @@ Questions worth more than "which RMSE is lowest":
 
 .. warning::
 
-   USDA NASS county yields blend irrigated and rainfed production. If the run is
-   configured ``irrigation: 'rainfed'``, modelled yields will sit below the
-   reference in heavily irrigated counties for reasons unrelated to ``CCx`` or
-   ``WP``. Any correction absorbs that gap, flattering the fit statistics while
-   attributing an irrigation signal to a growth parameter. For a cleaner test,
-   restrict the reference to predominantly rainfed counties or run irrigated to
-   match.
+   Most published statistics blend irrigated and rainfed production into a
+   single regional yield. If the run is configured ``irrigation: 'rainfed'``,
+   modelled yields will sit below the reference in heavily irrigated regions
+   for reasons unrelated to ``CCx`` or ``WP``. Any correction absorbs that gap,
+   flattering the fit statistics while attributing an irrigation signal to a
+   growth parameter. For a cleaner test, use a reference column that separates
+   the two where the source provides one, restrict the reference to
+   predominantly rainfed regions, or run irrigated to match.
 
 Checking the machinery
 ----------------------
 
-``visual_check.py`` exercises the correction code on synthetic data where the
-answer is known — useful after changing the correction modules, as distinct
-from ``compare_corrections.py`` which inspects real results:
+``compare_corrections`` inspects the results of a real run, tabulating
+corrected against uncorrected yields per region per year so a correction that
+has gone the wrong way is visible immediately:
 
 .. code-block:: python
 
-   from geoaquacrop_simulate.visual_check import main
-   main()
+   import geoaquacrop as gac
+
+   gac.simulate.compare()

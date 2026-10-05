@@ -12,6 +12,4 @@ API reference
    correction
    yield_correction
    build_reference
-   ingest_castillayleon
    compare_corrections
-   visual_check

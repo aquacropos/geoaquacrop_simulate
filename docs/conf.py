@@ -8,8 +8,8 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "geoaquacrop-simulate"
 author = "Christopher Bowden"
 copyright = f"{datetime.now():%Y}, {author}"
-release = "0.1"
-version = "0.1"
+release = "0.1.0"
+version = "0.1.0"
 
 extensions = [
     "sphinx.ext.autodoc",
@@ -33,7 +33,7 @@ autodoc_default_options = {
 # plots.py is an interactive Dash dashboard with module-level configuration and
 # side effects; importing it during a docs build would execute that setup, so it
 # is documented narratively rather than by autodoc.
-autodoc_mock_imports = []          # nothing to mock: the dashboard now lives in geoaquacrop_visualize
+autodoc_mock_imports = []          # nothing to mock: every module imports cleanly
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
@@ -49,5 +49,5 @@ templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "furo"
-html_static_path = []
+html_static_path = ["_static"]
 html_title = f"{project} {release}"
