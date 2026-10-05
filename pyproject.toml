@@ -22,6 +22,19 @@ maintainers = [
     { name = "Christopher Bowden", email = "christopher.bowden@manchester.ac.uk" },
 ]
 
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: Hydrology",
+]
+
 dependencies = [
     "numpy",
     "pandas",
@@ -35,6 +48,7 @@ dependencies = [
 dev = ["pytest", "pytest-cov"]
 correction = ["geopandas", "matplotlib"]   # yield correction + comparison figures
 docs = ["sphinx>=7", "furo"]
+
 
 [project.urls]
 Documentation = "https://geoaquacrop-simulate.readthedocs.io/en/stable/"
