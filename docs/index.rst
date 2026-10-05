@@ -1,7 +1,7 @@
 geoaquacrop_simulate
 ====================
 
-**geoaquacrop_simulate** runs `FAO AquaCrop <https://www.fao.org/aquacrop>`_ over
+**geoaquacrop_simulate** runs `AquaCrop-OSPy <https://github.com/aquacropos/aquacrop>`_ over
 large regions in gridded format. It takes the harmonised input datasets produced
 by :doc:`geoaquacrop_preprocess <preprocess:index>`, runs an independent AquaCrop
 simulation for every grid cell in parallel, and writes per-cell seasonal and
