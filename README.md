@@ -1,12 +1,12 @@
 # geoaquacrop_simulate
 
-> Gridded FAO AquaCrop simulation engine for the GeoAquaCrop toolchain.
+> Gridded AquaCrop-OSPy simulation engine for the GeoAquaCrop toolchain.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![License](https://img.shields.io/badge/license-Apache%20License%202.0-blue)
 
 ## Overview
 
-**geoaquacrop_simulate** runs [FAO AquaCrop](https://www.fao.org/aquacrop) over large regions in gridded format. It takes the harmonised input datasets produced by [geoaquacrop_preprocess](https://github.com/aquacropos/geoaquacrop_preprocess), runs an independent AquaCrop simulation for every grid cell in parallel, and writes per-cell seasonal and daily results. These outputs can then be visualized by [geoaquacrop_visualize](https://github.com/aquacropos/geoaquacrop_visualize).
+**geoaquacrop_simulate** runs [AquaCrop-OSPy](https://github.com/aquacropos/aquacrop) over large regions in gridded format. It takes the harmonised input datasets produced by [geoaquacrop_preprocess](https://github.com/aquacropos/geoaquacrop_preprocess), runs an independent AquaCrop simulation for every grid cell in parallel, and writes per-cell seasonal and daily results. These outputs can then be visualized by [geoaquacrop_visualize](https://github.com/aquacropos/geoaquacrop_visualize).
 
 It is the middle stage of the GeoAquaCrop toolchain:
 
