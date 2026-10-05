@@ -1,7 +1,11 @@
+# Run the test suite on every push and pull request to main, and again when a
+# release is published, so a tagged release cannot go out on a red suite.
+#
+# The [correction] extra brings in geopandas and matplotlib, which the yield
+# correction and comparison-figure tests need; without it those tests skip and
+# the correction path would ship untested.
 name: tests
 
-# Run the suite on every push and PR to main, and again when a release is
-# published (so a tagged release can't go out with a failing test suite).
 on:
   push:
     branches: [main]
@@ -10,34 +14,47 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: "Python ${{ matrix.python-version }} on ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install dependencies
+      - name: Install the package and its test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install ".[dev,correction]"
 
-      - name: Run test suite
-        run: |
-          pytest -q --cov=geoaquacrop_simulate --cov-report=term-missing
+      # The pinned aquacrop floor carries the CO2 scenario files, the TileDrain
+      # output column and the mutable planting-date lists. Fail loudly and early
+      # if resolution ever lands on something older.
+      - name: Report the resolved aquacrop version
+        run: python -c "import aquacrop; print('aquacrop', aquacrop.__version__)"
 
-      # Optional: upload coverage to Codecov (needs the repo enabled there)
-      # - name: Upload coverage
-      #   uses: codecov/codecov-action@v4
-      #   with:
-      #     token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Run the suite
+        run: >-
+          pytest -v
+          --cov=geoaquacrop_simulate --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
