@@ -6,13 +6,13 @@
 
 ## Overview
 
-**geoaquacrop_simulate** runs [FAO AquaCrop](https://www.fao.org/aquacrop) over large regions in gridded format. It takes the harmonised input datasets produced by [geoaquacrop_preprocess](https://github.com/aquacropos/geoaquacrop_preprocess), runs an independent AquaCrop simulation for every grid cell in parallel, and writes per-cell seasonal and daily results.
+**geoaquacrop_simulate** runs [FAO AquaCrop](https://www.fao.org/aquacrop) over large regions in gridded format. It takes the harmonised input datasets produced by [geoaquacrop_preprocess](https://github.com/aquacropos/geoaquacrop_preprocess), runs an independent AquaCrop simulation for every grid cell in parallel, and writes per-cell seasonal and daily results. These outputs can then be visualized by [geoaquacrop_visualize](https://github.com/aquacropos/geoaquacrop_visualize).
 
 It is the middle stage of the GeoAquaCrop toolchain:
 
 ```
 geoaquacrop_preprocess  ->  geoaquacrop_simulate  ->  geoaquacrop_visualize
-(download & harmonise)   (simulate & correct)  (explore results)
+(download & harmonise)   (simulate & correct)         (explore results)
 ```
 
 | Stage | Description |
@@ -107,11 +107,11 @@ Optional. Brings modelled yields into line with an observational reference, per 
 }
 ```
 
-See the [yield correction guide](https://geoaquacrop_simulate.readthedocs.io/en/stable/corrections.html) for what each mode does and how to interpret the results.
+See the [yield correction guide](https://geoaquacrop-simulate.readthedocs.io/en/stable/corrections.html) for what each mode does and how to interpret the results.
 
 ## Documentation
 
-Full documentation: <https://geoaquacrop_simulate.readthedocs.io>
+Full documentation: <https://geoaquacrop-simulate.readthedocs.io>
 
 ## Tests
 
@@ -121,4 +121,4 @@ python -m pytest -q
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).

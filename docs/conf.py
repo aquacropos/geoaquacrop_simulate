@@ -5,8 +5,8 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.abspath("../src"))
 
-project = "geoaquacrop_simulate"
-author = "Chris Bowden"
+project = "geoaquacrop-simulate"
+author = "Christopher Bowden"
 copyright = f"{datetime.now():%Y}, {author}"
 release = "0.1"
 version = "0.1"
@@ -41,7 +41,8 @@ intersphinx_mapping = {
     "pandas": ("https://pandas.pydata.org/docs/", None),
     "xarray": ("https://docs.xarray.dev/en/stable/", None),
     "preprocess": (
-        "https://geoaquacrop-preprocessing.readthedocs.io/en/stable/", None),
+        "https://geoaquacrop-preprocess.readthedocs.io/en/stable/", None),
+    "visualize": ("https://geoaquacrop-visualize.readthedocs.io/en/stable/",      None)
 }
 
 templates_path = ["_templates"]

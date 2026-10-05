@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geoaquacrop_simulate"
-version = "0.1.0"              # beta; pip needs --pre to install it
+version = "0.1.0"             
 description = "Gridded AquaCrop-OSPy simulation runner"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,14 +12,14 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]     
 authors = [
     { name = "Josias Lang-Ritter" },
-    { name = "Chris Bowden" },
-    { name = "Seyed Hosseini" },
+    { name = "Christopher Bowden" },
+    { name = "Seyed Hossein Hosseini" },
     { name = "Henrikki Tenkanen" },
-    { name = "Tim Foster" },
+    { name = "Timothy Foster" },
     ]
 
 maintainers = [
-    { name = "Chris Bowden", email = "christopher.bowden@manchester.ac.uk" },
+    { name = "Christopher Bowden", email = "christopher.bowden@manchester.ac.uk" },
 ]
 
 dependencies = [
@@ -28,13 +28,20 @@ dependencies = [
     "xarray>=2025.1",
     "netcdf4",
     "tqdm",
-    "aquacrop",                  
+    "aquacrop>=3.1.0", # guarantee CO2 scenario-specific files                  
 ]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
 correction = ["geopandas", "matplotlib"]   # yield correction + comparison figures
 docs = ["sphinx>=7", "furo"]
+
+[project.urls]
+Documentation = "https://geoaquacrop-simulate.readthedocs.io/en/stable/"
+Homepage = "https://github.com/aquacropos/geoaquacrop_simulate"
+Preprocessing = "https://github.com/aquacropos/geoaquacrop_preprocess"
+Visualization = "https://github.com/aquacropos/geoaquacrop_visualize"
+
 
 [project.scripts]
 geoaquacrop_simulate = "geoaquacrop_simulate.run_aquacrop:main"

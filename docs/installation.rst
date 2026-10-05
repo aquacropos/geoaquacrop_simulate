@@ -18,7 +18,7 @@ Install
    .. code-block:: bash
 
       git clone https://github.com/aquacropos/geoaquacrop_simulate
-      cd geoaquacrop_simulate-dev
+      cd geoaquacrop_simulate
 
 2. **Create and activate the conda environment:**
 

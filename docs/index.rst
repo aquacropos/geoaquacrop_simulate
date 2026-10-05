@@ -12,7 +12,7 @@ It is the middle stage of the GeoAquaCrop toolchain:
 .. code-block:: text
 
    geoaquacrop_preprocess  ->  geoaquacrop_simulate  ->  geoaquacrop_visualize
-   (download & harmonise)   (simulate & correct)  (explore results)
+   (download & harmonise)   (simulate & correct)        (explore results)
 
 What it does
 ------------
