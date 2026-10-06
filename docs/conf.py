@@ -41,7 +41,7 @@ intersphinx_mapping = {
     "pandas": ("https://pandas.pydata.org/docs/", None),
     "xarray": ("https://docs.xarray.dev/en/stable/", None),
     "preprocess": (
-        "https://geoaquacrop-preprocess.readthedocs.io/en/stable/", None),
+        "https://geoaquacrop-preprocess.readthedocs.io/en/latest/", None),
     "visualize": ("https://geoaquacrop-visualize.readthedocs.io/en/stable/",      None)
 }
 
