@@ -15,16 +15,6 @@
   <a href="https://github.com/aquacropos/geoaquacrop_simulate/blob/main/LICENSE"><img src="https://img.shields.io/badge/licence-Apache%202.0-blue" alt="Licence"></a>
 </p>
 
-<!--
-Drop a figure of real output here - a yield map, or corrected vs observed.
-It does more for a first impression than anything else on the page.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/aquacropos/geoaquacrop_simulate/main/docs/_static/example_output.png"
-       alt="Modelled maize yield across the High Plains, 2010" width="760">
-</p>
--->
-
 ## Install
 
 ```bash
