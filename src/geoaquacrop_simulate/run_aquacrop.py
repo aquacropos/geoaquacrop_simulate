@@ -281,15 +281,67 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
 
 
 
-def main():
-    """Console-script entry point: runs :data:`EXAMPLE_CONFIG`.
+def main(argv=None):
+    """Console-script entry point for ``geoaquacrop_simulate``.
 
-    Edit ``EXAMPLE_CONFIG`` at the top of this module, or -- better -- call
-    :func:`run` with keyword arguments from your own script.
+    Parses command-line arguments and calls :func:`run`. Any setting not given
+    on the command line falls back to :data:`EXAMPLE_CONFIG`, so editing that
+    dictionary and running with no arguments still works.
+
+    Returns an exit status, not the result paths, because a console script's
+    return value becomes the process exit code. Call :func:`run` directly to
+    get ``(summary_file, daily_file)`` back.
+
+    From a notebook or IDE console, pass ``argv=[]`` so this does not try to
+    parse the host process's own ``sys.argv``.
     """
-    return run(EXAMPLE_CONFIG)
+    import argparse
+    from importlib.metadata import version as _distribution_version
+
+    freeze_support()
+
+    parser = argparse.ArgumentParser(
+        prog="geoaquacrop_simulate",
+        description="Run AquaCrop-OSPy over every cell of a gridded region.",
+        epilog="Yield correction takes a nested configuration and is set up in "
+               "Python via run(correction={...}). See "
+               "https://geoaquacrop-simulate.readthedocs.io/en/stable/corrections.html",
+    )
+    parser.add_argument("--data-path",
+                        help="Directory holding all four preprocessed inputs. "
+                             "Fills the four paths below at once.")
+    parser.add_argument("--weather-path", help="Climate NetCDFs, if not under --data-path.")
+    parser.add_argument("--soil-path", help="Soil NetCDFs, if not under --data-path.")
+    parser.add_argument("--pheno-path", help="Crop calendar, if not under --data-path.")
+    parser.add_argument("--spam-path", help="Crop area grids, if not under --data-path.")
+    parser.add_argument("--start-date", metavar="YYYY/MM/DD", help="First simulated day.")
+    parser.add_argument("--end-date", metavar="YYYY/MM/DD", help="Last simulated day.")
+    parser.add_argument("--crop", help="Crop type, e.g. Maize or Wheat_winter.")
+    parser.add_argument("--irrigation", choices=["rainfed", "irrigated"],
+                        help="Water regime.")
+    parser.add_argument("--output-dir", help="Where results are written.")
+    parser.add_argument("--show-config", action="store_true",
+                        help="Print the full settings dictionary and exit.")
+    parser.add_argument("--version", action="version",
+                        version=f"geoaquacrop_simulate "
+                                f"{_distribution_version('geoaquacrop_simulate')}")
+    args = parser.parse_args(argv)
+
+    if args.show_config:
+        import pprint
+        pprint.pprint(EXAMPLE_CONFIG)
+        return 0
+
+    # only the options actually supplied override EXAMPLE_CONFIG
+    overrides = {name: value for name, value in vars(args).items()
+                 if name != "show_config" and value is not None}
+
+    try:
+        run(EXAMPLE_CONFIG, **overrides)
+    except ValueError as error:
+        parser.exit(2, f"{parser.prog}: error: {error}\n")
+    return 0
 
 
 if __name__ == "__main__":
-    freeze_support()
-    main()
+    raise SystemExit(main())
