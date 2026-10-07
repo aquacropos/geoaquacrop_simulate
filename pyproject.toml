@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geoaquacrop_simulate"
-version = "0.1.0"             
+version = "0.1.1"             
 description = "Gridded AquaCrop-OSPy simulation runner"
 readme = "README.md"
 requires-python = ">=3.11"
