@@ -19,6 +19,11 @@ from functools import partial
 from aquacrop import AquaCropModel, Soil, Crop, IrrigationManagement
 from .summary_enrichers import apply_all as apply_enrichers
 
+#: Worker processes used when the caller does not specify a number. Deliberately
+#: conservative: a small default is predictable everywhere, whereas sizing to
+#: the machine's core count oversubscribes shared and scheduled systems and
+#: monopolises a laptop. Pass ``max_workers`` to use more.
+DEFAULT_MAX_WORKERS = 4
 
 class DataLoader:
     """Handle loading of standardized input data."""
@@ -417,11 +422,18 @@ class ParallelProcessor:
         self.logger = logger
     
     def run_parallel(self, coords_df: pd.DataFrame, max_workers: Optional[int] = None) -> Tuple[List, List]:
-        """Run simulations in parallel across grid cells."""
-        import multiprocessing
-        
+        """Run simulations in parallel across grid cells.
+
+        Parameters
+        ----------
+        max_workers : int, optional
+            Worker processes to start. Defaults to
+            :data:`DEFAULT_MAX_WORKERS`. On a machine with more cores available
+            to you, pass a larger number; on a cluster, pass whatever the job
+            was allocated.
+        """
         if max_workers is None:
-            max_workers = multiprocessing.cpu_count()
+            max_workers = DEFAULT_MAX_WORKERS
         
         self.logger.info(f"Starting parallel processing with {max_workers} workers")
         

@@ -237,7 +237,8 @@ def calibration_override(config, processor_cls, validated_inputs, coords_df,
     def runner(value):
         sub_cfg = {**config, "crop_param_override": {param: value}}
         proc = processor_cls(sub_cfg, validated_inputs, logger)
-        summ, _ = proc.run_parallel(coords_search)
+        summ, _ = proc.run_parallel(
+            coords_search, max_workers=config.get("max_workers"))
         return summary_to_points(summ, cfg["value_col"], start_year)
 
     # the cell -> region mapping depends only on geometry, so build it once

@@ -83,6 +83,7 @@ EXAMPLE_CONFIG = {
     "crop": "Wheat_winter",
     "irrigation": "rainfed",
     "output_dir": "outputs",
+    "max_workers": None,                         # None = DEFAULT_MAX_WORKERS (4)
     "correction": {
         "method": None,                          # None | 'scale' | 'calibrate'
         "reference_path": "reference/reference.geojson",
@@ -178,6 +179,7 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         pheno_path=None, spam_path=None, start_date=None, end_date=None,
         crop=None, irrigation=None, initial_water_content=None,
         output_dir=None, correction=None, crop_param_override=None,
+        max_workers=None,
         **extra):
     """Run a gridded AquaCrop simulation.
 
@@ -214,6 +216,9 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         Yield correction settings; see the documentation. Omit to disable.
     crop_param_override : dict, optional
         Crop parameters applied to every cell, e.g. ``{'CCx': 0.70}``.
+    max_workers : int, optional
+        Worker processes for the parallel run. Defaults to
+        ``processor.DEFAULT_MAX_WORKERS``.
     **extra
         Any further configuration key, passed through unchanged.
 
@@ -235,7 +240,8 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         start_date=start_date, end_date=end_date, crop=crop,
         irrigation=irrigation, initial_water_content=initial_water_content,
         output_dir=output_dir, correction=correction,
-        crop_param_override=crop_param_override, **extra)
+        crop_param_override=crop_param_override, 
+        max_workers=max_workers, **extra)
 
     # --- 1. Load config from config.py ---
     sim_config = SimulationConfig(config_dict)
@@ -263,7 +269,8 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
 
     # --- 3b. Run simulations in parallel (uses the calibrated parameter) ---
     processor = ParallelProcessor(sim_config.config, validated_inputs, logger)
-    summary_results, daily_results = processor.run_parallel(coords_df)
+    summary_results, daily_results = processor.run_parallel(
+        coords_df, max_workers=sim_config.config.get('max_workers'))
 
     # --- 4. Save results ---
     summary_file, daily_file = processor.save_results(
@@ -320,6 +327,9 @@ def main(argv=None):
     parser.add_argument("--irrigation", choices=["rainfed", "irrigated"],
                         help="Water regime.")
     parser.add_argument("--output-dir", help="Where results are written.")
+    parser.add_argument("--max-workers", type=int,
+                        help="Worker processes for the parallel run "
+                                "(default: 4).")
     parser.add_argument("--show-config", action="store_true",
                         help="Print the full settings dictionary and exit.")
     parser.add_argument("--version", action="version",
