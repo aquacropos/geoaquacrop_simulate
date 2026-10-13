@@ -77,14 +77,19 @@ def _write_reference(path, coords, year_factor=None):
 
 
 class FakeProcessor:
-    """Yield responds linearly to the CCx override; default is biased high."""
+    """Yield responds linearly to the CCx override; default is biased high.
+
+    ``run_parallel`` accepts ``max_workers`` to match the real
+    ``ParallelProcessor``: correction.calibration_override forwards the
+    configured worker count to whatever processor class it is given.
+    """
 
     def __init__(self, config, validated_inputs=None, logger=None):
         self.config = config
         self.validated_inputs = validated_inputs or {}
         self.logger = logger or LOG
 
-    def run_parallel(self, coords_df):
+    def run_parallel(self, coords_df, max_workers=None):
         ccx = (self.config.get("crop_param_override") or {}).get("CCx", 0.96)
         return _summary(coords_df, scale=ccx / 0.70), None
 
@@ -93,10 +98,24 @@ class CountingProcessor(FakeProcessor):
     calls = None
     n_full_total = None
 
-    def run_parallel(self, coords_df):
+    def run_parallel(self, coords_df, max_workers=None):
         key = "full" if len(coords_df) == type(self).n_full_total else "search"
         type(self).calls[key] += 1
-        return super().run_parallel(coords_df)
+        return super().run_parallel(coords_df, max_workers=max_workers)
+
+
+class RecordingProcessor(FakeProcessor):
+    """Records the ``max_workers`` value each call received.
+
+    Class-level because calibration_override constructs a fresh processor for
+    every trial, so per-instance state would be discarded.
+    """
+
+    seen = None
+
+    def run_parallel(self, coords_df, max_workers=None):
+        type(self).seen.append(max_workers)
+        return super().run_parallel(coords_df, max_workers=max_workers)
 
 
 @pytest.fixture
@@ -303,6 +322,31 @@ def test_run_correction_reports_without_researching(setup):
     r = run_correction(proc, _summary(coords, scale=1.0), coords)
     assert CountingProcessor.calls == {"full": 0, "search": 0}
     assert r["value"] == pytest.approx(0.70)
+
+
+# ----------------------------------------------- max_workers forwarding -----
+
+def test_calibration_forwards_configured_max_workers(setup):
+    """The calibration search must use the worker count the caller asked for,
+    not the package default."""
+    coords, ref, out = setup
+    RecordingProcessor.seen = []
+    cfg = _cfg(ref, out, method="calibrate", lever="canopy", search_sample=40)
+    cfg["max_workers"] = 7
+    calibration_override(cfg, RecordingProcessor, {}, coords, LOG)
+    assert RecordingProcessor.seen, "the search never ran"
+    assert set(RecordingProcessor.seen) == {7}
+
+
+def test_calibration_max_workers_absent_passes_none(setup):
+    """With no max_workers configured, None is forwarded so the processor
+    falls back to DEFAULT_MAX_WORKERS."""
+    coords, ref, out = setup
+    RecordingProcessor.seen = []
+    cfg = _cfg(ref, out, method="calibrate", lever="canopy", search_sample=40)
+    calibration_override(cfg, RecordingProcessor, {}, coords, LOG)
+    assert RecordingProcessor.seen, "the search never ran"
+    assert set(RecordingProcessor.seen) == {None}
 
 
 # --------------------------------------------------------- reuse ------------
