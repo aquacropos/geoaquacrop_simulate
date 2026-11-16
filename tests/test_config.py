@@ -54,6 +54,15 @@ class TestSimulationConfig:
         sc = SimulationConfig(valid_config_dict)  # should not raise
         assert sc.config["irrigation"] == irr
 
+    def test_adaptive_planting_accepts_known_keys(self, valid_config_dict):
+        valid_config_dict["adaptive_planting"] = {"PlantTempThr": 12, "PlantMaxDelay": 60}
+        SimulationConfig(valid_config_dict)  # should not raise
+
+    def test_adaptive_planting_rejects_unknown_keys(self, valid_config_dict):
+        valid_config_dict["adaptive_planting"] = {"PlantTempThreshold": 12}
+        with pytest.raises(ValueError, match="Unknown adaptive_planting keys"):
+            SimulationConfig(valid_config_dict)
+
 
 # ---------------------------------------------------------------------------
 # SimulationConfig.validate_all_inputs / coordinate extraction

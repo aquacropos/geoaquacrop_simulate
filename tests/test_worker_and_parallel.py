@@ -112,6 +112,17 @@ class TestIntegration:
         assert sown.dt.year.is_monotonic_increasing
         assert "nominal_planting_date" in summary
 
+    def test_adaptive_planting_delays_sowing(self, validated, logger):
+        config, inputs = validated
+        row = _first_row(inputs["coords"])
+        fixed = worker_run(0, row, inputs, config, logger)["summary"]
+        # synthetic weather averages 20 C, so a 30 C rule never fires and
+        # sowing slips by the full PlantMaxDelay
+        config = {**config, "adaptive_planting": {"PlantTempThr": 30, "PlantMaxDelay": 10}}
+        delayed = worker_run(0, row, inputs, config, logger)["summary"]
+        first = lambda df: pd.to_datetime(df["planting_date"].iloc[0], format="%Y/%m/%d")
+        assert (first(delayed) - first(fixed)).days == 10
+
     def test_run_parallel_aggregates_all_cells(self, validated, logger):
         config, inputs = validated
         proc = ParallelProcessor(config, inputs, logger)

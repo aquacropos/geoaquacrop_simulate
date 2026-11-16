@@ -85,6 +85,7 @@ EXAMPLE_CONFIG = {
     "irrigation": "rainfed",
     "output_dir": "outputs",
     "max_workers": None,                         # None = DEFAULT_MAX_WORKERS (4)
+    "adaptive_planting": None,                   # e.g. {'PlantTempThr': 12, 'PlantMaxDelay': 60}
     "correction": {
         "method": None,                          # None | 'scale' | 'calibrate'
         "reference_path": "reference/reference.geojson",
@@ -180,6 +181,7 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         pheno_path=None, spam_path=None, start_date=None, end_date=None,
         crop=None, irrigation=None, initial_water_content=None,
         output_dir=None, correction=None, crop_param_override=None,
+        adaptive_planting=None,
         max_workers=None,
         **extra):
     """Run a gridded AquaCrop simulation.
@@ -217,6 +219,10 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         Yield correction settings; see the documentation. Omit to disable.
     crop_param_override : dict, optional
         Crop parameters applied to every cell, e.g. ``{'CCx': 0.70}``.
+    adaptive_planting : dict, optional
+        Adaptive planting rule applied to every cell, as AquaCrop Crop
+        attributes, e.g. ``{'PlantTempThr': 12, 'PlantTWindow': 5,
+        'PlantMaxDelay': 60}``. The calendar planting date opens the window.
     max_workers : int, optional
         Worker processes for the parallel run. Defaults to
         ``processor.DEFAULT_MAX_WORKERS``.
@@ -242,6 +248,7 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         irrigation=irrigation, initial_water_content=initial_water_content,
         output_dir=output_dir, correction=correction,
         crop_param_override=crop_param_override, 
+        adaptive_planting=adaptive_planting,
         max_workers=max_workers, **extra)
 
     # --- 1. Load config from config.py ---

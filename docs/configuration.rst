@@ -125,6 +125,29 @@ Crop parameter override
 applied to every cell, e.g. ``{'CCx': 0.70}``. Calibration sets it
 automatically; you can also set it by hand to run a sensitivity experiment.
 
+Adaptive planting
+-----------------
+
+``adaptive_planting`` lets AquaCrop choose the sowing date each season instead
+of using the crop calendar date. The calendar date opens the sowing window;
+AquaCrop sows on the first day that meets the rule, or at the end of the window
+if none does. The rule applies to every cell, so the date it fires on varies by
+cell and year.
+
+.. code-block:: python
+
+   run(..., adaptive_planting={
+       'PlantTempThr':  12,   # mean daily temperature threshold, °C
+       'PlantTWindow':  5,    # consecutive days at or above it
+       'PlantMaxDelay': 60,   # longest delay after the calendar date, days
+   })
+
+Keys are AquaCrop :class:`Crop` attributes: ``PlantTempThr``,
+``PlantTWindow``, ``PlantRainThr``, ``PlantRainWindow``, ``PlantSMThr``,
+``PlantMaxDelay`` and ``PlantTrigger``, which is set to ``True`` for you.
+Unknown keys raise an error. The date used each season is reported in the
+``planting_date`` output column (see :doc:`outputs`).
+
 Logging
 -------
 

@@ -331,6 +331,13 @@ def worker_run(
         # optional global crop-parameter override (used by calibration)
         for _k, _v in (config.get("crop_param_override") or {}).items():
             setattr(crop_obj, _k, _v)
+
+        # Optional adaptive planting rule. The calendar date opens the sowing
+        # window; AquaCrop sows on the first day that meets the rule.
+        rule = config.get("adaptive_planting")
+        if rule:
+            for _k, _v in {"PlantTrigger": True, **rule}.items():
+                setattr(crop_obj, _k, _v)
         
         # Adjust crop phenology
         crop_obj = CropAdjuster.adjust_crop_phenology(crop_obj, pheno_data)

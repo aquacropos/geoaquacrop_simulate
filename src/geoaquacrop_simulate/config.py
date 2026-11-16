@@ -80,6 +80,12 @@ class InputRequirements:
     # Irrigation types
     IRRIGATION_TYPES = ['irrigated', 'rainfed']
 
+    # AquaCrop Crop attributes that control adaptive planting
+    ADAPTIVE_PLANTING_KEYS = {
+        'PlantTrigger', 'PlantTempThr', 'PlantTWindow', 'PlantRainThr',
+        'PlantRainWindow', 'PlantSMThr', 'PlantMaxDelay',
+    }
+
 
 class InputValidator:
     """Validate input files meet requirements."""
@@ -411,9 +417,26 @@ class SimulationConfig:
         # Validate irrigation
         if self.config['irrigation'].lower() not in InputRequirements.IRRIGATION_TYPES:
             raise ValueError(f"Invalid irrigation type: {self.config['irrigation']}")
+
+        self._validate_adaptive_planting()
         
         # Create output directory if it doesn't exist
         self.config['output_dir'].mkdir(parents=True, exist_ok=True)
+
+    def _validate_adaptive_planting(self):
+        """Check adaptive_planting names only AquaCrop planting-rule attributes.
+
+        AquaCrop drops unknown Crop attributes silently, so a misspelt key
+        would quietly leave planting fixed.
+        """
+        rule = self.config.get('adaptive_planting')
+        if not rule:
+            return
+        unknown = set(rule) - InputRequirements.ADAPTIVE_PLANTING_KEYS
+        if unknown:
+            raise ValueError(
+                f"Unknown adaptive_planting keys: {sorted(unknown)}. "
+                f"Allowed: {sorted(InputRequirements.ADAPTIVE_PLANTING_KEYS)}")
 
     def _get_coordinates_from_weather(self, precip_file: Path) -> pd.DataFrame:
         with xr.open_dataset(precip_file) as ds:
