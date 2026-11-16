@@ -89,6 +89,18 @@ class TestSaveResults:
         pd.testing.assert_frame_equal(loaded[0], summary[0])
 
 
+    def test_save_daily_false_skips_daily_file(self, validated, logger, tmp_path):
+        config, inputs = validated
+        proc = ParallelProcessor({**config, "save_daily": False}, inputs, logger)
+        summary = [pd.DataFrame([{"cell_id": 0, "x": 1.0, "y": 2.0}])]
+        daily = [{"water_flux": pd.DataFrame({"dap": [1, 2]})}]
+        s_file, d_file = proc.save_results(summary, daily, tmp_path)
+
+        assert s_file.exists()
+        assert d_file is None
+        assert not list(tmp_path.glob("daily_results_*.pkl"))
+
+
 @pytest.mark.slow
 @pytest.mark.integration
 class TestIntegration:

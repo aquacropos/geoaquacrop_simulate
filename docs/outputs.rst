@@ -64,6 +64,9 @@ transpiration, soil evaporation and profile water content. These feed the
 time-series panels of
 `geoaquacrop_visualize <https://geoaquacrop-visualize.readthedocs.io/en/latest/>`_.
 
+On a large grid this file runs to gigabytes per run. Pass ``save_daily=False``
+to skip it; the seasonal summary, including every derived metric, is unchanged.
+
 Loading results
 ---------------
 

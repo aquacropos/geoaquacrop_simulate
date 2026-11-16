@@ -87,6 +87,7 @@ EXAMPLE_CONFIG = {
     "max_workers": None,                         # None = DEFAULT_MAX_WORKERS (4)
     "adaptive_planting": None,                   # e.g. {'PlantTempThr': 12, 'PlantMaxDelay': 60}
     "irrigation_management": None,               # IrrigationManagement settings; irrigated only
+    "save_daily": True,                          # False skips the daily results file
     "correction": {
         "method": None,                          # None | 'scale' | 'calibrate'
         "reference_path": "reference/reference.geojson",
@@ -184,6 +185,7 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         output_dir=None, correction=None, crop_param_override=None,
         adaptive_planting=None,
         irrigation_management=None,
+        save_daily=None,
         max_workers=None,
         **extra):
     """Run a gridded AquaCrop simulation.
@@ -229,6 +231,9 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         AquaCrop IrrigationManagement settings for irrigated runs, e.g.
         ``{'MaxIrr': 5}`` to cap irrigation at 5 mm a day. Merged over the
         default of soil-moisture targets at 80% TAW.
+    save_daily : bool, optional
+        Write the daily results file. Defaults to ``True``; pass ``False``
+        on large grids, where it runs to gigabytes.
     max_workers : int, optional
         Worker processes for the parallel run. Defaults to
         ``processor.DEFAULT_MAX_WORKERS``.
@@ -238,7 +243,8 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
     Returns
     -------
     tuple
-        ``(summary_file, daily_file)`` paths to the saved results, or
+        ``(summary_file, daily_file)`` paths to the saved results;
+        ``daily_file`` is ``None`` when ``save_daily=False``. Or
         ``(None, None)`` when the call only corrected an existing saved run
         (``correction.reuse_results``).
 
@@ -256,6 +262,7 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         crop_param_override=crop_param_override, 
         adaptive_planting=adaptive_planting,
         irrigation_management=irrigation_management,
+        save_daily=save_daily,
         max_workers=max_workers, **extra)
 
     # --- 1. Load config from config.py ---
@@ -299,7 +306,8 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
 
     logger.info("Simulation finished successfully")
     logger.info(f"Summary saved to: {summary_file}")
-    logger.info(f"Daily outputs saved to: {daily_file}")
+    if daily_file is not None:
+        logger.info(f"Daily outputs saved to: {daily_file}")
     return summary_file, daily_file
 
 

@@ -509,7 +509,12 @@ class ParallelProcessor:
             pickle.dump(summary_results, f, pickle.HIGHEST_PROTOCOL)
         self.logger.info(f"Summary results saved to {summary_file}")
         
-        # Save daily results
+        # Daily results are still built in memory for the enrichers, but on a
+        # large grid the file runs to gigabytes, so writing it is optional
+        if not self.config.get('save_daily', True):
+            self.logger.info("Daily results not saved (save_daily=False)")
+            return summary_file, None
+
         daily_file = output_dir / f"daily_results_{timestamp}.pkl"
         with open(daily_file, 'wb') as f:
             pickle.dump(daily_results, f, pickle.HIGHEST_PROTOCOL)
