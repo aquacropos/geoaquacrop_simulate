@@ -17,13 +17,30 @@ from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from aquacrop import AquaCropModel, Soil, Crop, IrrigationManagement
+from aquacrop.entities.co2 import CO2
+from functools import lru_cache
 from .summary_enrichers import apply_all as apply_enrichers
+from .config import InputRequirements
 
 #: Worker processes used when the caller does not specify a number. Deliberately
 #: conservative: a small default is predictable everywhere, whereas sizing to
 #: the machine's core count oversubscribes shared and scheduled systems and
 #: monopolises a laptop. Pass ``max_workers`` to use more.
 DEFAULT_MAX_WORKERS = 4
+
+@lru_cache(maxsize=None)
+def co2_record(scenario: Optional[str] = None) -> pd.DataFrame:
+    """Annual CO2 (ppm): Mauna Loa observations, then an SSP pathway.
+
+    Years up to InputRequirements.OBSERVED_CO2_END come from AquaCrop's Mauna
+    Loa record; later years from ``scenario``, or the default SSP if None.
+    """
+    end = InputRequirements.OBSERVED_CO2_END
+    observed = CO2().co2_data
+    future = CO2(scenario=scenario or InputRequirements.DEFAULT_CO2_SCENARIO).co2_data
+    return pd.concat([observed[observed['year'] <= end],
+                      future[future['year'] > end]], ignore_index=True)
+
 
 class DataLoader:
     """Handle loading of standardized input data."""
@@ -73,6 +90,11 @@ class DataLoader:
 
         # Rename time column only
         weather_df = weather_df.rename(columns={"time": "Date"})
+
+        # Daily data is stamped at midday by some sources (e.g. NEX-GDDP-CMIP6).
+        # AquaCrop compares dates at midnight, so a noon first day reads as
+        # starting after sim_start_time and every cell fails.
+        weather_df["Date"] = pd.to_datetime(weather_df["Date"]).dt.normalize()
         
         # Force a floor of 0.01 for ReferenceET to protect against divide by 0
         weather_df["ReferenceET"] = weather_df["ReferenceET"].clip(lower=0.01)
@@ -326,6 +348,13 @@ def worker_run(
         # optional global crop-parameter override (used by calibration)
         for _k, _v in (config.get("crop_param_override") or {}).items():
             setattr(crop_obj, _k, _v)
+
+        # Optional adaptive planting rule. The calendar date opens the sowing
+        # window; AquaCrop sows on the first day that meets the rule.
+        rule = config.get("adaptive_planting")
+        if rule:
+            for _k, _v in {"PlantTrigger": True, **rule}.items():
+                setattr(crop_obj, _k, _v)
         
         # Adjust crop phenology
         crop_obj = CropAdjuster.adjust_crop_phenology(crop_obj, pheno_data)
@@ -341,11 +370,12 @@ def worker_run(
         
         
         # Set up irrigation
-        irr_method = 1 if config['irrigation'].lower() == 'irrigated' else 0
-        irr_mngt = IrrigationManagement(
-            irrigation_method=irr_method,
-            SMT=[80, 80, 80, 0] if irr_method == 1 else None
-        )
+        if config['irrigation'].lower() == 'irrigated':
+            irr_settings = {**InputRequirements.DEFAULT_IRRIGATION,
+                            **(config.get('irrigation_management') or {})}
+        else:
+            irr_settings = {'irrigation_method': 0}
+        irr_mngt = IrrigationManagement(**irr_settings)
         
         # Set initial water content
         initial_wc = config['initial_water_content']
@@ -358,7 +388,8 @@ def worker_run(
             soil=soil,
             crop=crop_obj,
             irrigation_management=irr_mngt,
-            initial_water_content=initial_wc
+            initial_water_content=initial_wc,
+            co2_concentration=CO2(co2_data=co2_record(config.get('co2_scenario')).copy()),
         )
         
         model.run_model(till_termination=True)
@@ -370,7 +401,15 @@ def worker_run(
         final_stats['x'] = x
         final_stats['crop'] = config['crop']
         final_stats['irrigation'] = config['irrigation']
-        final_stats['planting_date'] = crop_obj.planting_date
+        # Sowing date AquaCrop actually used each season. It differs from the
+        # calendar date when an adaptive planting trigger is set.
+        sown = list(model._clock_struct.planting_dates)
+        final_stats['planting_date'] = [
+            pd.Timestamp(sown[int(s)]).strftime('%Y/%m/%d')
+            if 0 <= int(s) < len(sown) else None
+            for s in final_stats['Season']
+        ]
+        final_stats['nominal_planting_date'] = crop_obj.planting_date
                 
         # Get daily outputs
         water_flux = model._outputs.water_flux
@@ -487,7 +526,12 @@ class ParallelProcessor:
             pickle.dump(summary_results, f, pickle.HIGHEST_PROTOCOL)
         self.logger.info(f"Summary results saved to {summary_file}")
         
-        # Save daily results
+        # Daily results are still built in memory for the enrichers, but on a
+        # large grid the file runs to gigabytes, so writing it is optional
+        if not self.config.get('save_daily', True):
+            self.logger.info("Daily results not saved (save_daily=False)")
+            return summary_file, None
+
         daily_file = output_dir / f"daily_results_{timestamp}.pkl"
         with open(daily_file, 'wb') as f:
             pickle.dump(daily_results, f, pickle.HIGHEST_PROTOCOL)

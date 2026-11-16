@@ -115,7 +115,7 @@ Written to `<output_dir>/`:
 | File | Contents |
 |---|---|
 | `summary_results_<timestamp>.pkl` | One seasonal summary row per cell per season: yields, irrigation, harvest date, plus derived metrics |
-| `daily_results_<timestamp>.pkl` | Daily water-balance and crop-growth series per cell |
+| `daily_results_<timestamp>.pkl` | Daily water-balance and crop-growth series per cell; skipped with `save_daily=False` |
 | `logs/aquacrop_simulation_<timestamp>.log` | Run log, including per-cell failures |
 | `yield_scaled.nc` / `yield_calibrated.nc` | Corrected yield grids, if a correction was configured |
 

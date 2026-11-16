@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 from geoaquacrop_simulate.config import SimulationConfig
-from geoaquacrop_simulate.processor import DataLoader, ParallelProcessor, worker_run
+from geoaquacrop_simulate.processor import DataLoader, ParallelProcessor, worker_run, co2_record
 
 
 @pytest.fixture
@@ -89,6 +89,36 @@ class TestSaveResults:
         pd.testing.assert_frame_equal(loaded[0], summary[0])
 
 
+    def test_save_daily_false_skips_daily_file(self, validated, logger, tmp_path):
+        config, inputs = validated
+        proc = ParallelProcessor({**config, "save_daily": False}, inputs, logger)
+        summary = [pd.DataFrame([{"cell_id": 0, "x": 1.0, "y": 2.0}])]
+        daily = [{"water_flux": pd.DataFrame({"dap": [1, 2]})}]
+        s_file, d_file = proc.save_results(summary, daily, tmp_path)
+
+        assert s_file.exists()
+        assert d_file is None
+        assert not list(tmp_path.glob("daily_results_*.pkl"))
+
+
+class TestCO2Record:
+    def _ppm(self, scenario):
+        from aquacrop.entities.co2 import CO2
+        return CO2(scenario=scenario).co2_data.set_index("year")["ppm"]
+
+    def test_observed_then_default_pathway(self):
+        from aquacrop.entities.co2 import CO2
+        record = co2_record(None).set_index("year")["ppm"]
+        observed = CO2().co2_data.set_index("year")["ppm"]
+        assert record.loc[:2025].equals(observed.loc[:2025])
+        assert record.loc[2026:].equals(self._ppm("ssp245").loc[2026:])
+
+    def test_named_pathway_after_observations(self):
+        record = co2_record("ssp585").set_index("year")["ppm"]
+        assert record.loc[2026:].equals(self._ppm("ssp585").loc[2026:])
+        assert record.index.is_monotonic_increasing
+
+
 @pytest.mark.slow
 @pytest.mark.integration
 class TestIntegration:
@@ -101,6 +131,56 @@ class TestIntegration:
         assert res["summary"]["cell_id"].iloc[0] == 0
         assert res["daily"] is not None
         assert "water_flux" in res["daily"]
+
+    def test_planting_date_is_per_season(self, validated, logger):
+        config, inputs = validated
+        res = worker_run(0, _first_row(inputs["coords"]), inputs, config, logger)
+        summary = res["summary"]
+        sown = pd.to_datetime(summary["planting_date"], format="%Y/%m/%d")
+        # one full date per season, in successive years
+        assert sown.notna().all()
+        assert sown.dt.year.is_monotonic_increasing
+        assert "nominal_planting_date" in summary
+
+    @pytest.mark.filterwarnings("ignore:spam2010_physical_area.nc missing")
+    def test_irrigation_management_reaches_each_cell(self, valid_config_dict, logger):
+        sc = SimulationConfig({**valid_config_dict, "irrigation": "irrigated"})
+        inputs = sc.validate_all_inputs()
+        row = _first_row(inputs["coords"])
+        irr = lambda cfg: worker_run(0, row, inputs, cfg, logger)["summary"][
+            "Seasonal irrigation (mm)"].sum()
+        default = irr(sc.config)
+        capped = irr({**sc.config, "irrigation_management": {"MaxIrr": 1}})
+        # 1 mm/day over three 130-day seasons at most
+        assert capped <= 3 * 130
+        assert capped < default
+
+    def test_co2_record_reaches_model(self, validated, logger, monkeypatch):
+        import geoaquacrop_simulate.processor as proc
+        config, inputs = validated
+        seen = []
+        real = proc.AquaCropModel
+
+        def spy(*args, **kwargs):
+            seen.append(kwargs["co2_concentration"])
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(proc, "AquaCropModel", spy)
+        worker_run(0, _first_row(inputs["coords"]), inputs,
+                   {**config, "co2_scenario": "ssp585"}, logger)
+        ppm = seen[0].co2_data.set_index("year")["ppm"]
+        assert ppm.loc[2100] > 1000   # SSP5-8.5 after the observed record
+
+    def test_adaptive_planting_delays_sowing(self, validated, logger):
+        config, inputs = validated
+        row = _first_row(inputs["coords"])
+        fixed = worker_run(0, row, inputs, config, logger)["summary"]
+        # synthetic weather averages 20 C, so a 30 C rule never fires and
+        # sowing slips by the full PlantMaxDelay
+        config = {**config, "adaptive_planting": {"PlantTempThr": 30, "PlantMaxDelay": 10}}
+        delayed = worker_run(0, row, inputs, config, logger)["summary"]
+        first = lambda df: pd.to_datetime(df["planting_date"].iloc[0], format="%Y/%m/%d")
+        assert (first(delayed) - first(fixed)).days == 10
 
     def test_run_parallel_aggregates_all_cells(self, validated, logger):
         config, inputs = validated

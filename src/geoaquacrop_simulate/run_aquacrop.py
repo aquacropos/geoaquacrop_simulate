@@ -4,10 +4,11 @@ Main entry point for running the model.
 """
 
 import logging
+from collections import Counter
 import datetime as dt
 from pathlib import Path
 from multiprocessing import freeze_support
-from .config import SimulationConfig, InputRequirements
+from .config import SimulationConfig, InputRequirements, co2_default_warning
 from aquacrop import InitialWaterContent
 from .processor import ParallelProcessor
 
@@ -84,6 +85,10 @@ EXAMPLE_CONFIG = {
     "irrigation": "rainfed",
     "output_dir": "outputs",
     "max_workers": None,                         # None = DEFAULT_MAX_WORKERS (4)
+    "adaptive_planting": None,                   # e.g. {'PlantTempThr': 12, 'PlantMaxDelay': 60}
+    "irrigation_management": None,               # IrrigationManagement settings; irrigated only
+    "save_daily": True,                          # False skips the daily results file
+    "co2_scenario": None,                        # None = observed to 2025, then ssp245
     "correction": {
         "method": None,                          # None | 'scale' | 'calibrate'
         "reference_path": "reference/reference.geojson",
@@ -179,6 +184,10 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         pheno_path=None, spam_path=None, start_date=None, end_date=None,
         crop=None, irrigation=None, initial_water_content=None,
         output_dir=None, correction=None, crop_param_override=None,
+        adaptive_planting=None,
+        irrigation_management=None,
+        save_daily=None,
+        co2_scenario=None,
         max_workers=None,
         **extra):
     """Run a gridded AquaCrop simulation.
@@ -216,6 +225,21 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         Yield correction settings; see the documentation. Omit to disable.
     crop_param_override : dict, optional
         Crop parameters applied to every cell, e.g. ``{'CCx': 0.70}``.
+    adaptive_planting : dict, optional
+        Adaptive planting rule applied to every cell, as AquaCrop Crop
+        attributes, e.g. ``{'PlantTempThr': 12, 'PlantTWindow': 5,
+        'PlantMaxDelay': 60}``. The calendar planting date opens the window.
+    irrigation_management : dict, optional
+        AquaCrop IrrigationManagement settings for irrigated runs, e.g.
+        ``{'MaxIrr': 5}`` to cap irrigation at 5 mm a day. Merged over the
+        default of soil-moisture targets at 80% TAW.
+    save_daily : bool, optional
+        Write the daily results file. Defaults to ``True``; pass ``False``
+        on large grids, where it runs to gigabytes.
+    co2_scenario : str, optional
+        SSP pathway for CO2 after 2025, e.g. ``'ssp585'``. Years up to 2025 use
+        Mauna Loa observations. Defaults to ``'ssp245'``, with a warning for
+        runs that extend past 2025.
     max_workers : int, optional
         Worker processes for the parallel run. Defaults to
         ``processor.DEFAULT_MAX_WORKERS``.
@@ -225,7 +249,8 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
     Returns
     -------
     tuple
-        ``(summary_file, daily_file)`` paths to the saved results, or
+        ``(summary_file, daily_file)`` paths to the saved results;
+        ``daily_file`` is ``None`` when ``save_daily=False``. Or
         ``(None, None)`` when the call only corrected an existing saved run
         (``correction.reuse_results``).
 
@@ -241,6 +266,10 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         irrigation=irrigation, initial_water_content=initial_water_content,
         output_dir=output_dir, correction=correction,
         crop_param_override=crop_param_override, 
+        adaptive_planting=adaptive_planting,
+        irrigation_management=irrigation_management,
+        save_daily=save_daily,
+        co2_scenario=co2_scenario,
         max_workers=max_workers, **extra)
 
     # --- 1. Load config from config.py ---
@@ -249,6 +278,9 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
     # --- 2. Set up logging ---
     logger = setup_logging(sim_config.config['output_dir'])
     logger.info("AquaCrop gridded simulation started")
+    co2_warning = co2_default_warning(sim_config.config)
+    if co2_warning:
+        logger.warning(co2_warning)
     
     # --- Optional: correct an already-saved run, skipping simulation ---
     from .correction import should_reuse, correct_saved_run
@@ -277,15 +309,34 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         summary_results, daily_results, sim_config.config['output_dir']
     )
     
+    _require_some_cells_ran(summary_results, summary_file)
+
     # --- 5. Optional config-driven yield correction ---
     processor.apply_correction(summary_results, coords_df)
 
     logger.info("Simulation finished successfully")
     logger.info(f"Summary saved to: {summary_file}")
-    logger.info(f"Daily outputs saved to: {daily_file}")
+    if daily_file is not None:
+        logger.info(f"Daily outputs saved to: {daily_file}")
     return summary_file, daily_file
 
 
+
+
+def _require_some_cells_ran(summary_results, summary_file):
+    """Raise if no cell simulated, naming the most common reason.
+
+    Failed cells are recorded as rows with an ``error`` column so one bad cell
+    does not stop the run. When every cell fails, though, the run is broken,
+    not partial, and should not look like a success.
+    """
+    errors = [df["error"].iloc[0] for df in summary_results
+              if df is not None and "error" in df.columns]
+    if summary_results and len(errors) == len(summary_results):
+        reason, count = Counter(errors).most_common(1)[0]
+        raise RuntimeError(
+            f"All {len(errors)} cells failed; most common error ({count} cells): "
+            f"{reason}. Summary saved to {summary_file} for inspection.")
 
 
 def main(argv=None):

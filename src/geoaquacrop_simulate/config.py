@@ -80,6 +80,27 @@ class InputRequirements:
     # Irrigation types
     IRRIGATION_TYPES = ['irrigated', 'rainfed']
 
+    # Default irrigation for irrigated runs: refill whenever soil water falls
+    # below 80% of TAW, in every growth stage except late season
+    DEFAULT_IRRIGATION = {'irrigation_method': 1, 'SMT': [80, 80, 80, 0]}
+
+    # IrrigationManagement settings that may be passed through
+    IRRIGATION_KEYS = {
+        'irrigation_method', 'WetSurf', 'AppEff', 'MaxIrr', 'MaxIrrSeason',
+        'SMT', 'IrrInterval', 'NetIrrSMT', 'Schedule', 'depth',
+    }
+
+    # CO2 record: AquaCrop's Mauna Loa observations up to and including
+    # OBSERVED_CO2_END, then an SSP pathway (DEFAULT_CO2_SCENARIO unless set)
+    OBSERVED_CO2_END = 2025
+    DEFAULT_CO2_SCENARIO = 'ssp245'
+
+    # AquaCrop Crop attributes that control adaptive planting
+    ADAPTIVE_PLANTING_KEYS = {
+        'PlantTrigger', 'PlantTempThr', 'PlantTWindow', 'PlantRainThr',
+        'PlantRainWindow', 'PlantSMThr', 'PlantMaxDelay',
+    }
+
 
 class InputValidator:
     """Validate input files meet requirements."""
@@ -411,9 +432,61 @@ class SimulationConfig:
         # Validate irrigation
         if self.config['irrigation'].lower() not in InputRequirements.IRRIGATION_TYPES:
             raise ValueError(f"Invalid irrigation type: {self.config['irrigation']}")
+
+        self._validate_adaptive_planting()
+        self._validate_co2_scenario()
+        self._validate_irrigation_management()
         
         # Create output directory if it doesn't exist
         self.config['output_dir'].mkdir(parents=True, exist_ok=True)
+
+    def _validate_adaptive_planting(self):
+        """Check adaptive_planting names only AquaCrop planting-rule attributes.
+
+        AquaCrop drops unknown Crop attributes silently, so a misspelt key
+        would quietly leave planting fixed.
+        """
+        rule = self.config.get('adaptive_planting')
+        if not rule:
+            return
+        unknown = set(rule) - InputRequirements.ADAPTIVE_PLANTING_KEYS
+        if unknown:
+            raise ValueError(
+                f"Unknown adaptive_planting keys: {sorted(unknown)}. "
+                f"Allowed: {sorted(InputRequirements.ADAPTIVE_PLANTING_KEYS)}")
+
+    def _validate_co2_scenario(self):
+        """Check co2_scenario, and warn when a future run falls back to the default."""
+        scenario = self.config.get('co2_scenario')
+        if scenario is not None:
+            from aquacrop.entities.co2 import CO2
+            try:
+                CO2(scenario=scenario)
+            except ValueError as error:
+                raise ValueError(f"Invalid co2_scenario: {error}") from None
+            return
+        message = co2_default_warning(self.config)
+        if message:
+            warnings.warn(message, stacklevel=2)
+
+    def _validate_irrigation_management(self):
+        """Check irrigation_management suits an irrigated run with known keys.
+
+        AquaCrop drops unknown IrrigationManagement settings silently.
+        """
+        settings = self.config.get('irrigation_management')
+        if not settings:
+            return
+        if self.config['irrigation'].lower() != 'irrigated':
+            raise ValueError("irrigation_management needs irrigation='irrigated'")
+        unknown = set(settings) - InputRequirements.IRRIGATION_KEYS
+        if unknown:
+            raise ValueError(
+                f"Unknown irrigation_management keys: {sorted(unknown)}. "
+                f"Allowed: {sorted(InputRequirements.IRRIGATION_KEYS)}")
+        if settings.get('irrigation_method', 1) not in (1, 2, 3, 4, 5):
+            raise ValueError("irrigation_management['irrigation_method'] must be 1-5; "
+                             "use irrigation='rainfed' for no irrigation")
 
     def _get_coordinates_from_weather(self, precip_file: Path) -> pd.DataFrame:
         with xr.open_dataset(precip_file) as ds:
@@ -480,3 +553,14 @@ class SimulationConfig:
             'phenology': pheno_files,
             'spam': spam_files
         }
+
+
+def co2_default_warning(config: Dict):
+    """Message for a run past the observed CO2 record with no co2_scenario set."""
+    end_year = int(str(config['end_date'])[:4])
+    if config.get('co2_scenario') is not None or end_year <= InputRequirements.OBSERVED_CO2_END:
+        return None
+    return (f"Simulation runs past {InputRequirements.OBSERVED_CO2_END} with no "
+            f"co2_scenario set: CO2 after {InputRequirements.OBSERVED_CO2_END} follows "
+            f"{InputRequirements.DEFAULT_CO2_SCENARIO}. Set co2_scenario to match the "
+            f"scenario of your climate data.")

@@ -125,6 +125,78 @@ Crop parameter override
 applied to every cell, e.g. ``{'CCx': 0.70}``. Calibration sets it
 automatically; you can also set it by hand to run a sensitivity experiment.
 
+CO2 concentration
+-----------------
+
+AquaCrop scales crop water productivity with atmospheric CO2. Each run uses
+annual Mauna Loa observations up to and including 2025 and an SSP pathway after
+it. The pathway defaults to SSP2-4.5; set ``co2_scenario`` to match the scenario
+of your climate data:
+
+.. code-block:: python
+
+   run(..., co2_scenario='ssp585')
+
+A run that extends past 2025 without ``co2_scenario`` warns, since the default
+pathway is unlikely to suit every scenario. Runs ending in 2025 or earlier use
+observations only, so the setting has no effect on them.
+
+Accepted values are the pathways AquaCrop ships: ``ssp119``, ``ssp126``,
+``ssp245``, ``ssp370``, ``ssp434``, ``ssp460``, ``ssp534os`` and ``ssp585``
+(``'SSP2-4.5'`` style is also accepted).
+
+Irrigation management
+---------------------
+
+Irrigated runs refill the root zone whenever soil water falls below 80% of
+total available water, in every growth stage but late season (AquaCrop
+``irrigation_method=1``, ``SMT=[80, 80, 80, 0]``). ``irrigation_management``
+changes this for every cell. Its entries are AquaCrop
+:class:`IrrigationManagement` settings, merged over the default:
+
+.. code-block:: python
+
+   run(..., irrigation='irrigated',
+       irrigation_management={'SMT': [70, 70, 70, 0], 'MaxIrrSeason': 400})
+
+A common change is the maximum depth applied in one day, ``MaxIrr`` (mm;
+AquaCrop's default is 25). Varying it gives a sweep of supply limits:
+
+.. code-block:: python
+
+   for depth in range(1, 11):
+       run(..., irrigation='irrigated',
+           irrigation_management={'MaxIrr': depth},
+           output_dir=f'outputs/irr{depth:02d}mm')
+
+Allowed keys: ``irrigation_method`` (1-5), ``SMT``, ``MaxIrr``,
+``MaxIrrSeason``, ``IrrInterval``, ``NetIrrSMT``, ``Schedule``, ``depth``,
+``WetSurf`` and ``AppEff``. Unknown keys raise an error, as does setting it on
+a rainfed run.
+
+Adaptive planting
+-----------------
+
+``adaptive_planting`` lets AquaCrop choose the sowing date each season instead
+of using the crop calendar date. The calendar date opens the sowing window;
+AquaCrop sows on the first day that meets the rule, or at the end of the window
+if none does. The rule applies to every cell, so the date it fires on varies by
+cell and year.
+
+.. code-block:: python
+
+   run(..., adaptive_planting={
+       'PlantTempThr':  12,   # mean daily temperature threshold, °C
+       'PlantTWindow':  5,    # consecutive days at or above it
+       'PlantMaxDelay': 60,   # longest delay after the calendar date, days
+   })
+
+Keys are AquaCrop :class:`Crop` attributes: ``PlantTempThr``,
+``PlantTWindow``, ``PlantRainThr``, ``PlantRainWindow``, ``PlantSMThr``,
+``PlantMaxDelay`` and ``PlantTrigger``, which is set to ``True`` for you.
+Unknown keys raise an error. The date used each season is reported in the
+``planting_date`` output column (see :doc:`outputs`).
+
 Logging
 -------
 

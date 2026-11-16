@@ -18,6 +18,11 @@ coordinates are carried in ``x`` and ``y``.
      - Description
    * - ``Season``
      - Zero-based season index within the simulation period
+   * - ``planting_date``
+     - Sowing date AquaCrop used that season, ``YYYY/MM/DD``. Differs from
+       the calendar date when adaptive planting is on
+   * - ``nominal_planting_date``
+     - Crop calendar planting date, ``MM/DD``
    * - ``Harvest Date (YYYY/MM/DD)``
      - Realised harvest date; its year is used to date each season
    * - ``Dry yield (tonne/ha)``
@@ -58,6 +63,9 @@ per cell, including canopy cover, biomass, deep percolation, runoff,
 transpiration, soil evaporation and profile water content. These feed the
 time-series panels of
 `geoaquacrop_visualize <https://geoaquacrop-visualize.readthedocs.io/en/latest/>`_.
+
+On a large grid this file runs to gigabytes per run. Pass ``save_daily=False``
+to skip it; the seasonal summary, including every derived metric, is unchanged.
 
 Loading results
 ---------------

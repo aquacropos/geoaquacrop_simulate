@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geoaquacrop_simulate"
-version = "0.1.2"             
+version = "0.2.0"
 description = "Gridded AquaCrop-OSPy simulation runner"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,7 +41,7 @@ dependencies = [
     "xarray>=2025.1",
     "netcdf4",
     "tqdm",
-    "aquacrop>=3.1.0", # guarantee CO2 scenario-specific files                  
+    "aquacrop>=3.1.2", # guarantee CO2 scenario-specific files                  
 ]
 
 [project.optional-dependencies]
