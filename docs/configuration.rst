@@ -125,6 +125,35 @@ Crop parameter override
 applied to every cell, e.g. ``{'CCx': 0.70}``. Calibration sets it
 automatically; you can also set it by hand to run a sensitivity experiment.
 
+Irrigation management
+---------------------
+
+Irrigated runs refill the root zone whenever soil water falls below 80% of
+total available water, in every growth stage but late season (AquaCrop
+``irrigation_method=1``, ``SMT=[80, 80, 80, 0]``). ``irrigation_management``
+changes this for every cell. Its entries are AquaCrop
+:class:`IrrigationManagement` settings, merged over the default:
+
+.. code-block:: python
+
+   run(..., irrigation='irrigated',
+       irrigation_management={'SMT': [70, 70, 70, 0], 'MaxIrrSeason': 400})
+
+A common change is the maximum depth applied in one day, ``MaxIrr`` (mm;
+AquaCrop's default is 25). Varying it gives a sweep of supply limits:
+
+.. code-block:: python
+
+   for depth in range(1, 11):
+       run(..., irrigation='irrigated',
+           irrigation_management={'MaxIrr': depth},
+           output_dir=f'outputs/irr{depth:02d}mm')
+
+Allowed keys: ``irrigation_method`` (1-5), ``SMT``, ``MaxIrr``,
+``MaxIrrSeason``, ``IrrInterval``, ``NetIrrSMT``, ``Schedule``, ``depth``,
+``WetSurf`` and ``AppEff``. Unknown keys raise an error, as does setting it on
+a rainfed run.
+
 Adaptive planting
 -----------------
 

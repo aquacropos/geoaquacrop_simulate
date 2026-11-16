@@ -86,6 +86,7 @@ EXAMPLE_CONFIG = {
     "output_dir": "outputs",
     "max_workers": None,                         # None = DEFAULT_MAX_WORKERS (4)
     "adaptive_planting": None,                   # e.g. {'PlantTempThr': 12, 'PlantMaxDelay': 60}
+    "irrigation_management": None,               # IrrigationManagement settings; irrigated only
     "correction": {
         "method": None,                          # None | 'scale' | 'calibrate'
         "reference_path": "reference/reference.geojson",
@@ -182,6 +183,7 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         crop=None, irrigation=None, initial_water_content=None,
         output_dir=None, correction=None, crop_param_override=None,
         adaptive_planting=None,
+        irrigation_management=None,
         max_workers=None,
         **extra):
     """Run a gridded AquaCrop simulation.
@@ -223,6 +225,10 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         Adaptive planting rule applied to every cell, as AquaCrop Crop
         attributes, e.g. ``{'PlantTempThr': 12, 'PlantTWindow': 5,
         'PlantMaxDelay': 60}``. The calendar planting date opens the window.
+    irrigation_management : dict, optional
+        AquaCrop IrrigationManagement settings for irrigated runs, e.g.
+        ``{'MaxIrr': 5}`` to cap irrigation at 5 mm a day. Merged over the
+        default of soil-moisture targets at 80% TAW.
     max_workers : int, optional
         Worker processes for the parallel run. Defaults to
         ``processor.DEFAULT_MAX_WORKERS``.
@@ -249,6 +255,7 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         output_dir=output_dir, correction=correction,
         crop_param_override=crop_param_override, 
         adaptive_planting=adaptive_planting,
+        irrigation_management=irrigation_management,
         max_workers=max_workers, **extra)
 
     # --- 1. Load config from config.py ---

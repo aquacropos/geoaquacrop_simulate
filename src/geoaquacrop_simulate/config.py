@@ -80,6 +80,16 @@ class InputRequirements:
     # Irrigation types
     IRRIGATION_TYPES = ['irrigated', 'rainfed']
 
+    # Default irrigation for irrigated runs: refill whenever soil water falls
+    # below 80% of TAW, in every growth stage except late season
+    DEFAULT_IRRIGATION = {'irrigation_method': 1, 'SMT': [80, 80, 80, 0]}
+
+    # IrrigationManagement settings that may be passed through
+    IRRIGATION_KEYS = {
+        'irrigation_method', 'WetSurf', 'AppEff', 'MaxIrr', 'MaxIrrSeason',
+        'SMT', 'IrrInterval', 'NetIrrSMT', 'Schedule', 'depth',
+    }
+
     # AquaCrop Crop attributes that control adaptive planting
     ADAPTIVE_PLANTING_KEYS = {
         'PlantTrigger', 'PlantTempThr', 'PlantTWindow', 'PlantRainThr',
@@ -419,6 +429,7 @@ class SimulationConfig:
             raise ValueError(f"Invalid irrigation type: {self.config['irrigation']}")
 
         self._validate_adaptive_planting()
+        self._validate_irrigation_management()
         
         # Create output directory if it doesn't exist
         self.config['output_dir'].mkdir(parents=True, exist_ok=True)
@@ -437,6 +448,25 @@ class SimulationConfig:
             raise ValueError(
                 f"Unknown adaptive_planting keys: {sorted(unknown)}. "
                 f"Allowed: {sorted(InputRequirements.ADAPTIVE_PLANTING_KEYS)}")
+
+    def _validate_irrigation_management(self):
+        """Check irrigation_management suits an irrigated run with known keys.
+
+        AquaCrop drops unknown IrrigationManagement settings silently.
+        """
+        settings = self.config.get('irrigation_management')
+        if not settings:
+            return
+        if self.config['irrigation'].lower() != 'irrigated':
+            raise ValueError("irrigation_management needs irrigation='irrigated'")
+        unknown = set(settings) - InputRequirements.IRRIGATION_KEYS
+        if unknown:
+            raise ValueError(
+                f"Unknown irrigation_management keys: {sorted(unknown)}. "
+                f"Allowed: {sorted(InputRequirements.IRRIGATION_KEYS)}")
+        if settings.get('irrigation_method', 1) not in (1, 2, 3, 4, 5):
+            raise ValueError("irrigation_management['irrigation_method'] must be 1-5; "
+                             "use irrigation='rainfed' for no irrigation")
 
     def _get_coordinates_from_weather(self, precip_file: Path) -> pd.DataFrame:
         with xr.open_dataset(precip_file) as ds:

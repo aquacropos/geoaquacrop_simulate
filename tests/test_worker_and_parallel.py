@@ -112,6 +112,19 @@ class TestIntegration:
         assert sown.dt.year.is_monotonic_increasing
         assert "nominal_planting_date" in summary
 
+    @pytest.mark.filterwarnings("ignore:spam2010_physical_area.nc missing")
+    def test_irrigation_management_reaches_each_cell(self, valid_config_dict, logger):
+        sc = SimulationConfig({**valid_config_dict, "irrigation": "irrigated"})
+        inputs = sc.validate_all_inputs()
+        row = _first_row(inputs["coords"])
+        irr = lambda cfg: worker_run(0, row, inputs, cfg, logger)["summary"][
+            "Seasonal irrigation (mm)"].sum()
+        default = irr(sc.config)
+        capped = irr({**sc.config, "irrigation_management": {"MaxIrr": 1}})
+        # 1 mm/day over three 130-day seasons at most
+        assert capped <= 3 * 130
+        assert capped < default
+
     def test_adaptive_planting_delays_sowing(self, validated, logger):
         config, inputs = validated
         row = _first_row(inputs["coords"])

@@ -87,9 +87,11 @@ def _write_phenology(directory: Path, crop_prefix: str = "Maize",
         gsl = np.full((len(GRID_Y), len(GRID_X)), 130, dtype="timedelta64[D]")
     else:
         gsl = np.full((len(GRID_Y), len(GRID_X)), 130, dtype="float32")
-    data_vars = {f"{crop_prefix}_rf_planting": (("y", "x"), plant)}
-    if include_gsl:
-        data_vars[f"{crop_prefix}_rf_growing_season_length"] = (("y", "x"), gsl)
+    data_vars = {}
+    for tag in ("rf", "ir"):  # identical rainfed and irrigated calendars
+        data_vars[f"{crop_prefix}_{tag}_planting"] = (("y", "x"), plant)
+        if include_gsl:
+            data_vars[f"{crop_prefix}_{tag}_growing_season_length"] = (("y", "x"), gsl)
     ds = xr.Dataset(data_vars, coords={"y": GRID_Y, "x": GRID_X})
     ds.to_netcdf(directory / "cropcalendar.nc")
 

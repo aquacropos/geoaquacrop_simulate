@@ -18,6 +18,7 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from aquacrop import AquaCropModel, Soil, Crop, IrrigationManagement
 from .summary_enrichers import apply_all as apply_enrichers
+from .config import InputRequirements
 
 #: Worker processes used when the caller does not specify a number. Deliberately
 #: conservative: a small default is predictable everywhere, whereas sizing to
@@ -353,11 +354,12 @@ def worker_run(
         
         
         # Set up irrigation
-        irr_method = 1 if config['irrigation'].lower() == 'irrigated' else 0
-        irr_mngt = IrrigationManagement(
-            irrigation_method=irr_method,
-            SMT=[80, 80, 80, 0] if irr_method == 1 else None
-        )
+        if config['irrigation'].lower() == 'irrigated':
+            irr_settings = {**InputRequirements.DEFAULT_IRRIGATION,
+                            **(config.get('irrigation_management') or {})}
+        else:
+            irr_settings = {'irrigation_method': 0}
+        irr_mngt = IrrigationManagement(**irr_settings)
         
         # Set initial water content
         initial_wc = config['initial_water_content']
