@@ -18,6 +18,11 @@ coordinates are carried in ``x`` and ``y``.
      - Description
    * - ``Season``
      - Zero-based season index within the simulation period
+   * - ``planting_date``
+     - Sowing date AquaCrop used that season, ``YYYY/MM/DD``. Differs from
+       the calendar date when adaptive planting is on
+   * - ``nominal_planting_date``
+     - Crop calendar planting date, ``MM/DD``
    * - ``Harvest Date (YYYY/MM/DD)``
      - Realised harvest date; its year is used to date each season
    * - ``Dry yield (tonne/ha)``

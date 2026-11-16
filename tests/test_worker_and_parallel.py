@@ -102,6 +102,16 @@ class TestIntegration:
         assert res["daily"] is not None
         assert "water_flux" in res["daily"]
 
+    def test_planting_date_is_per_season(self, validated, logger):
+        config, inputs = validated
+        res = worker_run(0, _first_row(inputs["coords"]), inputs, config, logger)
+        summary = res["summary"]
+        sown = pd.to_datetime(summary["planting_date"], format="%Y/%m/%d")
+        # one full date per season, in successive years
+        assert sown.notna().all()
+        assert sown.dt.year.is_monotonic_increasing
+        assert "nominal_planting_date" in summary
+
     def test_run_parallel_aggregates_all_cells(self, validated, logger):
         config, inputs = validated
         proc = ParallelProcessor(config, inputs, logger)

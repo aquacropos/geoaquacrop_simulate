@@ -375,7 +375,15 @@ def worker_run(
         final_stats['x'] = x
         final_stats['crop'] = config['crop']
         final_stats['irrigation'] = config['irrigation']
-        final_stats['planting_date'] = crop_obj.planting_date
+        # Sowing date AquaCrop actually used each season. It differs from the
+        # calendar date when an adaptive planting trigger is set.
+        sown = list(model._clock_struct.planting_dates)
+        final_stats['planting_date'] = [
+            pd.Timestamp(sown[int(s)]).strftime('%Y/%m/%d')
+            if 0 <= int(s) < len(sown) else None
+            for s in final_stats['Season']
+        ]
+        final_stats['nominal_planting_date'] = crop_obj.planting_date
                 
         # Get daily outputs
         water_flux = model._outputs.water_flux
