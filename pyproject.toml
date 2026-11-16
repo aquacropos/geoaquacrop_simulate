@@ -41,7 +41,7 @@ dependencies = [
     "xarray>=2025.1",
     "netcdf4",
     "tqdm",
-    "aquacrop>=3.1.0", # guarantee CO2 scenario-specific files                  
+    "aquacrop>=3.1.2", # guarantee CO2 scenario-specific files                  
 ]
 
 [project.optional-dependencies]
