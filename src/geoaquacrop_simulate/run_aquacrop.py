@@ -4,6 +4,7 @@ Main entry point for running the model.
 """
 
 import logging
+from collections import Counter
 import datetime as dt
 from pathlib import Path
 from multiprocessing import freeze_support
@@ -277,6 +278,8 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         summary_results, daily_results, sim_config.config['output_dir']
     )
     
+    _require_some_cells_ran(summary_results, summary_file)
+
     # --- 5. Optional config-driven yield correction ---
     processor.apply_correction(summary_results, coords_df)
 
@@ -286,6 +289,22 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
     return summary_file, daily_file
 
 
+
+
+def _require_some_cells_ran(summary_results, summary_file):
+    """Raise if no cell simulated, naming the most common reason.
+
+    Failed cells are recorded as rows with an ``error`` column so one bad cell
+    does not stop the run. When every cell fails, though, the run is broken,
+    not partial, and should not look like a success.
+    """
+    errors = [df["error"].iloc[0] for df in summary_results
+              if df is not None and "error" in df.columns]
+    if summary_results and len(errors) == len(summary_results):
+        reason, count = Counter(errors).most_common(1)[0]
+        raise RuntimeError(
+            f"All {len(errors)} cells failed; most common error ({count} cells): "
+            f"{reason}. Summary saved to {summary_file} for inspection.")
 
 
 def main(argv=None):

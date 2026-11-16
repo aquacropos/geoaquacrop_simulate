@@ -18,3 +18,22 @@ def test_print_input_requirements_runs(capsys):
     assert "WEATHER DATA" in out
     assert "SOIL DATA" in out
     assert "PHENOLOGY DATA" in out
+
+
+def test_all_cells_failed_raises():
+    import pandas as pd
+    import pytest
+    from geoaquacrop_simulate.run_aquacrop import _require_some_cells_ran
+
+    failed = [pd.DataFrame([{"cell_id": i, "error": "bad weather"}]) for i in range(3)]
+    with pytest.raises(RuntimeError, match="All 3 cells failed.*bad weather"):
+        _require_some_cells_ran(failed, "summary.pkl")
+
+
+def test_some_cells_ran_passes():
+    import pandas as pd
+    from geoaquacrop_simulate.run_aquacrop import _require_some_cells_ran
+
+    mixed = [pd.DataFrame([{"cell_id": 0, "error": "bad weather"}]),
+             pd.DataFrame([{"cell_id": 1, "Dry yield (tonne/ha)": 5.0}])]
+    _require_some_cells_ran(mixed, "summary.pkl")
