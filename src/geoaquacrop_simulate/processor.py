@@ -73,6 +73,11 @@ class DataLoader:
 
         # Rename time column only
         weather_df = weather_df.rename(columns={"time": "Date"})
+
+        # Daily data is stamped at midday by some sources (e.g. NEX-GDDP-CMIP6).
+        # AquaCrop compares dates at midnight, so a noon first day reads as
+        # starting after sim_start_time and every cell fails.
+        weather_df["Date"] = pd.to_datetime(weather_df["Date"]).dt.normalize()
         
         # Force a floor of 0.01 for ReferenceET to protect against divide by 0
         weather_df["ReferenceET"] = weather_df["ReferenceET"].clip(lower=0.01)

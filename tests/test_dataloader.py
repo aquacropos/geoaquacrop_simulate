@@ -121,3 +121,24 @@ class TestLoadSpamArea:
                 "variable": "Maize_rf_physical_area"}
         area = DataLoader.load_spam_area_for_point(spam, grid["x"][0], grid["y"][0])
         assert area == pytest.approx(42.0)
+
+
+def test_weather_dates_normalised_to_midnight(tmp_path):
+    """Noon timestamps (as in NEX-GDDP-CMIP6) are floored to the day."""
+    import numpy as np
+    import pandas as pd
+    import xarray as xr
+    from geoaquacrop_simulate.processor import DataLoader
+
+    times = pd.date_range("2008-01-01 12:00", periods=5, freq="D")
+    files = {}
+    for var in ("MinTemp", "MaxTemp", "Precipitation", "ReferenceET"):
+        data = np.full((5, 1, 1), 1.0, dtype="float32")
+        path = tmp_path / f"{var}.nc"
+        xr.Dataset({var: (("time", "y", "x"), data)},
+                   coords={"time": times, "y": [10.0], "x": [8.0]}).to_netcdf(path)
+        files[var] = str(path)
+
+    df = DataLoader.load_weather_for_point(files, 10.0, 8.0, "2008/01/01", "2008/01/05")
+    assert (df["Date"] == df["Date"].dt.normalize()).all()
+    assert df["Date"].iloc[0] == pd.Timestamp("2008-01-01")
