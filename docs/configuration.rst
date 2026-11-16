@@ -125,6 +125,26 @@ Crop parameter override
 applied to every cell, e.g. ``{'CCx': 0.70}``. Calibration sets it
 automatically; you can also set it by hand to run a sensitivity experiment.
 
+CO2 concentration
+-----------------
+
+AquaCrop scales crop water productivity with atmospheric CO2. Each run uses
+annual Mauna Loa observations up to and including 2025 and an SSP pathway after
+it. The pathway defaults to SSP2-4.5; set ``co2_scenario`` to match the scenario
+of your climate data:
+
+.. code-block:: python
+
+   run(..., co2_scenario='ssp585')
+
+A run that extends past 2025 without ``co2_scenario`` warns, since the default
+pathway is unlikely to suit every scenario. Runs ending in 2025 or earlier use
+observations only, so the setting has no effect on them.
+
+Accepted values are the pathways AquaCrop ships: ``ssp119``, ``ssp126``,
+``ssp245``, ``ssp370``, ``ssp434``, ``ssp460``, ``ssp534os`` and ``ssp585``
+(``'SSP2-4.5'`` style is also accepted).
+
 Irrigation management
 ---------------------
 

@@ -17,6 +17,8 @@ from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from aquacrop import AquaCropModel, Soil, Crop, IrrigationManagement
+from aquacrop.entities.co2 import CO2
+from functools import lru_cache
 from .summary_enrichers import apply_all as apply_enrichers
 from .config import InputRequirements
 
@@ -25,6 +27,20 @@ from .config import InputRequirements
 #: the machine's core count oversubscribes shared and scheduled systems and
 #: monopolises a laptop. Pass ``max_workers`` to use more.
 DEFAULT_MAX_WORKERS = 4
+
+@lru_cache(maxsize=None)
+def co2_record(scenario: Optional[str] = None) -> pd.DataFrame:
+    """Annual CO2 (ppm): Mauna Loa observations, then an SSP pathway.
+
+    Years up to InputRequirements.OBSERVED_CO2_END come from AquaCrop's Mauna
+    Loa record; later years from ``scenario``, or the default SSP if None.
+    """
+    end = InputRequirements.OBSERVED_CO2_END
+    observed = CO2().co2_data
+    future = CO2(scenario=scenario or InputRequirements.DEFAULT_CO2_SCENARIO).co2_data
+    return pd.concat([observed[observed['year'] <= end],
+                      future[future['year'] > end]], ignore_index=True)
+
 
 class DataLoader:
     """Handle loading of standardized input data."""
@@ -372,7 +388,8 @@ def worker_run(
             soil=soil,
             crop=crop_obj,
             irrigation_management=irr_mngt,
-            initial_water_content=initial_wc
+            initial_water_content=initial_wc,
+            co2_concentration=CO2(co2_data=co2_record(config.get('co2_scenario')).copy()),
         )
         
         model.run_model(till_termination=True)

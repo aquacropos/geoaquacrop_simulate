@@ -54,6 +54,28 @@ class TestSimulationConfig:
         sc = SimulationConfig(valid_config_dict)  # should not raise
         assert sc.config["irrigation"] == irr
 
+    @pytest.mark.parametrize("scenario", ["ssp245", "SSP5-8.5"])
+    def test_co2_scenario_accepts_aquacrop_pathways(self, valid_config_dict, scenario):
+        valid_config_dict["co2_scenario"] = scenario
+        SimulationConfig(valid_config_dict)  # should not raise
+
+    def test_co2_scenario_rejects_unknown(self, valid_config_dict):
+        valid_config_dict["co2_scenario"] = "rcp85"
+        with pytest.raises(ValueError, match="Invalid co2_scenario"):
+            SimulationConfig(valid_config_dict)
+
+    def test_future_run_without_co2_scenario_warns(self, valid_config_dict):
+        valid_config_dict["end_date"] = "2030/12/31"
+        with pytest.warns(UserWarning, match="no co2_scenario set"):
+            SimulationConfig(valid_config_dict)
+
+    @pytest.mark.parametrize("extra", [{}, {"end_date": "2030/12/31", "co2_scenario": "ssp585"}])
+    def test_no_co2_warning_when_not_needed(self, valid_config_dict, extra):
+        valid_config_dict.update(extra)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            SimulationConfig(valid_config_dict)
+
     def test_adaptive_planting_accepts_known_keys(self, valid_config_dict):
         valid_config_dict["adaptive_planting"] = {"PlantTempThr": 12, "PlantMaxDelay": 60}
         SimulationConfig(valid_config_dict)  # should not raise

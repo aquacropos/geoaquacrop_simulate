@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 from geoaquacrop_simulate.config import SimulationConfig
-from geoaquacrop_simulate.processor import DataLoader, ParallelProcessor, worker_run
+from geoaquacrop_simulate.processor import DataLoader, ParallelProcessor, worker_run, co2_record
 
 
 @pytest.fixture
@@ -101,6 +101,24 @@ class TestSaveResults:
         assert not list(tmp_path.glob("daily_results_*.pkl"))
 
 
+class TestCO2Record:
+    def _ppm(self, scenario):
+        from aquacrop.entities.co2 import CO2
+        return CO2(scenario=scenario).co2_data.set_index("year")["ppm"]
+
+    def test_observed_then_default_pathway(self):
+        from aquacrop.entities.co2 import CO2
+        record = co2_record(None).set_index("year")["ppm"]
+        observed = CO2().co2_data.set_index("year")["ppm"]
+        assert record.loc[:2025].equals(observed.loc[:2025])
+        assert record.loc[2026:].equals(self._ppm("ssp245").loc[2026:])
+
+    def test_named_pathway_after_observations(self):
+        record = co2_record("ssp585").set_index("year")["ppm"]
+        assert record.loc[2026:].equals(self._ppm("ssp585").loc[2026:])
+        assert record.index.is_monotonic_increasing
+
+
 @pytest.mark.slow
 @pytest.mark.integration
 class TestIntegration:
@@ -136,6 +154,22 @@ class TestIntegration:
         # 1 mm/day over three 130-day seasons at most
         assert capped <= 3 * 130
         assert capped < default
+
+    def test_co2_record_reaches_model(self, validated, logger, monkeypatch):
+        import geoaquacrop_simulate.processor as proc
+        config, inputs = validated
+        seen = []
+        real = proc.AquaCropModel
+
+        def spy(*args, **kwargs):
+            seen.append(kwargs["co2_concentration"])
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(proc, "AquaCropModel", spy)
+        worker_run(0, _first_row(inputs["coords"]), inputs,
+                   {**config, "co2_scenario": "ssp585"}, logger)
+        ppm = seen[0].co2_data.set_index("year")["ppm"]
+        assert ppm.loc[2100] > 1000   # SSP5-8.5 after the observed record
 
     def test_adaptive_planting_delays_sowing(self, validated, logger):
         config, inputs = validated

@@ -90,6 +90,11 @@ class InputRequirements:
         'SMT', 'IrrInterval', 'NetIrrSMT', 'Schedule', 'depth',
     }
 
+    # CO2 record: AquaCrop's Mauna Loa observations up to and including
+    # OBSERVED_CO2_END, then an SSP pathway (DEFAULT_CO2_SCENARIO unless set)
+    OBSERVED_CO2_END = 2025
+    DEFAULT_CO2_SCENARIO = 'ssp245'
+
     # AquaCrop Crop attributes that control adaptive planting
     ADAPTIVE_PLANTING_KEYS = {
         'PlantTrigger', 'PlantTempThr', 'PlantTWindow', 'PlantRainThr',
@@ -429,6 +434,7 @@ class SimulationConfig:
             raise ValueError(f"Invalid irrigation type: {self.config['irrigation']}")
 
         self._validate_adaptive_planting()
+        self._validate_co2_scenario()
         self._validate_irrigation_management()
         
         # Create output directory if it doesn't exist
@@ -448,6 +454,20 @@ class SimulationConfig:
             raise ValueError(
                 f"Unknown adaptive_planting keys: {sorted(unknown)}. "
                 f"Allowed: {sorted(InputRequirements.ADAPTIVE_PLANTING_KEYS)}")
+
+    def _validate_co2_scenario(self):
+        """Check co2_scenario, and warn when a future run falls back to the default."""
+        scenario = self.config.get('co2_scenario')
+        if scenario is not None:
+            from aquacrop.entities.co2 import CO2
+            try:
+                CO2(scenario=scenario)
+            except ValueError as error:
+                raise ValueError(f"Invalid co2_scenario: {error}") from None
+            return
+        message = co2_default_warning(self.config)
+        if message:
+            warnings.warn(message, stacklevel=2)
 
     def _validate_irrigation_management(self):
         """Check irrigation_management suits an irrigated run with known keys.
@@ -533,3 +553,14 @@ class SimulationConfig:
             'phenology': pheno_files,
             'spam': spam_files
         }
+
+
+def co2_default_warning(config: Dict):
+    """Message for a run past the observed CO2 record with no co2_scenario set."""
+    end_year = int(str(config['end_date'])[:4])
+    if config.get('co2_scenario') is not None or end_year <= InputRequirements.OBSERVED_CO2_END:
+        return None
+    return (f"Simulation runs past {InputRequirements.OBSERVED_CO2_END} with no "
+            f"co2_scenario set: CO2 after {InputRequirements.OBSERVED_CO2_END} follows "
+            f"{InputRequirements.DEFAULT_CO2_SCENARIO}. Set co2_scenario to match the "
+            f"scenario of your climate data.")

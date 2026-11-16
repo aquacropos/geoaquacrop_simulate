@@ -8,7 +8,7 @@ from collections import Counter
 import datetime as dt
 from pathlib import Path
 from multiprocessing import freeze_support
-from .config import SimulationConfig, InputRequirements
+from .config import SimulationConfig, InputRequirements, co2_default_warning
 from aquacrop import InitialWaterContent
 from .processor import ParallelProcessor
 
@@ -88,6 +88,7 @@ EXAMPLE_CONFIG = {
     "adaptive_planting": None,                   # e.g. {'PlantTempThr': 12, 'PlantMaxDelay': 60}
     "irrigation_management": None,               # IrrigationManagement settings; irrigated only
     "save_daily": True,                          # False skips the daily results file
+    "co2_scenario": None,                        # None = observed to 2025, then ssp245
     "correction": {
         "method": None,                          # None | 'scale' | 'calibrate'
         "reference_path": "reference/reference.geojson",
@@ -186,6 +187,7 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         adaptive_planting=None,
         irrigation_management=None,
         save_daily=None,
+        co2_scenario=None,
         max_workers=None,
         **extra):
     """Run a gridded AquaCrop simulation.
@@ -234,6 +236,10 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
     save_daily : bool, optional
         Write the daily results file. Defaults to ``True``; pass ``False``
         on large grids, where it runs to gigabytes.
+    co2_scenario : str, optional
+        SSP pathway for CO2 after 2025, e.g. ``'ssp585'``. Years up to 2025 use
+        Mauna Loa observations. Defaults to ``'ssp245'``, with a warning for
+        runs that extend past 2025.
     max_workers : int, optional
         Worker processes for the parallel run. Defaults to
         ``processor.DEFAULT_MAX_WORKERS``.
@@ -263,6 +269,7 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         adaptive_planting=adaptive_planting,
         irrigation_management=irrigation_management,
         save_daily=save_daily,
+        co2_scenario=co2_scenario,
         max_workers=max_workers, **extra)
 
     # --- 1. Load config from config.py ---
@@ -271,6 +278,9 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
     # --- 2. Set up logging ---
     logger = setup_logging(sim_config.config['output_dir'])
     logger.info("AquaCrop gridded simulation started")
+    co2_warning = co2_default_warning(sim_config.config)
+    if co2_warning:
+        logger.warning(co2_warning)
     
     # --- Optional: correct an already-saved run, skipping simulation ---
     from .correction import should_reuse, correct_saved_run
