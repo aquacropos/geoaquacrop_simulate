@@ -66,6 +66,7 @@ class InputRequirements:
         'Maize',
         'PaddyRice1',      # first rice season (from GGCMI) -> AquaCrop 'PaddyRice'
         'PaddyRice2',      # second rice season (from GGCMI) -> AquaCrop 'PaddyRice'
+        'PaddyRice3',      # third rice season (MARC: dry season, Nov-Feb) -> AquaCrop 'PaddyRice'
         'Potato',
         'Quinoa',          # not supported by SPAM, no production data available
         'Sorghum',

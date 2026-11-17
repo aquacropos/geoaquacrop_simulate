@@ -323,3 +323,10 @@ class TestSpamFile:
     def test_missing_spam_file_raises(self, valid_config_dict, tmp_path):
         with pytest.raises(ValueError, match="spam_file not found"):
             SimulationConfig({**valid_config_dict, "spam_file": str(tmp_path / "none.nc")})
+
+
+
+def test_paddyrice3_is_a_supported_crop(valid_config_dict):
+    """MARC's group calendar has three rice seasons; the third is the dry season."""
+    sc = SimulationConfig({**valid_config_dict, "crop": "PaddyRice3"})
+    assert sc.config["crop"] == "PaddyRice3"
