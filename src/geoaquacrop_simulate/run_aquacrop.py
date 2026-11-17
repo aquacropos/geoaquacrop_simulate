@@ -89,6 +89,8 @@ EXAMPLE_CONFIG = {
     "irrigation_management": None,               # IrrigationManagement settings; irrigated only
     "save_daily": True,                          # False skips the daily results file
     "co2_scenario": None,                        # None = observed to 2025, then ssp245
+    "cell_mask": None,                           # NetCDF; simulate only cells where it is set
+    "spam_file": None,                           # SPAM NetCDF; overrides the period-midpoint choice
     "correction": {
         "method": None,                          # None | 'scale' | 'calibrate'
         "reference_path": "reference/reference.geojson",
@@ -188,6 +190,8 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         irrigation_management=None,
         save_daily=None,
         co2_scenario=None,
+        cell_mask=None,
+        spam_file=None,
         max_workers=None,
         **extra):
     """Run a gridded AquaCrop simulation.
@@ -240,6 +244,14 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         SSP pathway for CO2 after 2025, e.g. ``'ssp585'``. Years up to 2025 use
         Mauna Loa observations. Defaults to ``'ssp245'``, with a warning for
         runs that extend past 2025.
+    cell_mask : str or Path, optional
+        NetCDF grid selecting the cells to simulate, e.g. cells with enough
+        crop area. Cells where its variable (``mask``, or its only variable)
+        is non-zero are simulated; all domain cells otherwise.
+    spam_file : str or Path, optional
+        SPAM physical-area NetCDF used for crop area and production. Defaults
+        to ``spam{2010|2020}_physical_area.nc`` in ``spam_path``, picked by
+        the midpoint of the simulation period.
     max_workers : int, optional
         Worker processes for the parallel run. Defaults to
         ``processor.DEFAULT_MAX_WORKERS``.
@@ -270,6 +282,8 @@ def run(config=None, *, data_path=None, weather_path=None, soil_path=None,
         irrigation_management=irrigation_management,
         save_daily=save_daily,
         co2_scenario=co2_scenario,
+        cell_mask=cell_mask,
+        spam_file=spam_file,
         max_workers=max_workers, **extra)
 
     # --- 1. Load config from config.py ---

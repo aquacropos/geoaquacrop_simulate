@@ -38,9 +38,10 @@ Derived metrics
 ---------------
 
 :mod:`geoaquacrop_simulate.summary_enrichers` adds further columns after each run:
-seasonal precipitation and evapotranspiration, total water input, production,
+seasonal precipitation and evapotranspiration, deep percolation and surface
+runoff (``deep_percolation_mm``, ``runoff_mm``), total water input, production,
 season length, water productivity (ET-based), rainfall use efficiency and
-irrigation water productivity.
+irrigation water productivity. All are per season, from planting to maturity.
 
 The registry is pluggable — decorate a function with
 :func:`~geoaquacrop_simulate.summary_enrichers.enricher` and it is applied
@@ -66,6 +67,8 @@ time-series panels of
 
 On a large grid this file runs to gigabytes per run. Pass ``save_daily=False``
 to skip it; the seasonal summary, including every derived metric, is unchanged.
+The daily series are then also dropped inside each worker once the derived
+metrics are computed, so they never accumulate in memory.
 
 Loading results
 ---------------

@@ -112,18 +112,26 @@ class InputValidator:
         end_year: int,
         crop: str,
         irrigation: str,
+        spam_file=None,
     ) -> Dict[str, str]:
         """
         Validate SPAM physical area NetCDF file.
         Returns dict with filepath and the specific variable name for this crop+irrigation.
+
+        ``spam_file`` names the file explicitly; otherwise the SPAM reference
+        year (2010 or 2020) nearest the midpoint of the simulation is used.
         """
-        # Pick SPAM refyear (2010 or 2020) based on midpoint of simulation period.
-        # Matches the logic in preprocess_tools.spam_refyear.
-        avg_year = np.ceil(np.mean([start_year, end_year]))
-        refyear = min([2010, 2020], key=lambda yr: abs(yr - avg_year))
-    
-        filename = f"spam{refyear}_physical_area.nc"
-        filepath = processed_path / filename
+        if spam_file is not None:
+            filepath = Path(spam_file)
+            filename = filepath.name
+        else:
+            # Pick SPAM refyear (2010 or 2020) based on midpoint of simulation period.
+            # Matches the logic in preprocess_tools.spam_refyear.
+            avg_year = np.ceil(np.mean([start_year, end_year]))
+            refyear = min([2010, 2020], key=lambda yr: abs(yr - avg_year))
+
+            filename = f"spam{refyear}_physical_area.nc"
+            filepath = processed_path / filename
     
         if not filepath.exists():
             raise ValueError(
@@ -387,6 +395,35 @@ class InputValidator:
 
 
 
+def apply_cell_mask(coords_df: pd.DataFrame, mask_path) -> pd.DataFrame:
+    """Keep only the cells where a mask grid is set.
+
+    The mask is a NetCDF with ``y``/``x`` coordinates and one data variable
+    (or a variable named ``mask``); cells with a non-zero value are kept.
+    Values are looked up at the nearest mask cell, so the mask may be on a
+    differently aligned grid. The index of ``coords_df`` (the cell id) is kept,
+    so cell ids match an unmasked run.
+    """
+    with xr.open_dataset(mask_path) as ds:
+        names = list(ds.data_vars)
+        if 'mask' in names:
+            name = 'mask'
+        elif len(names) == 1:
+            name = names[0]
+        else:
+            raise ValueError(
+                f"cell_mask {mask_path} has several variables {names}; name the "
+                f"mask variable 'mask'.")
+        values = ds[name].sel(
+            y=xr.DataArray(coords_df['y'].values, dims='cell'),
+            x=xr.DataArray(coords_df['x'].values, dims='cell'),
+            method='nearest').values
+    keep = np.nan_to_num(values.astype(float)) != 0
+    if not keep.any():
+        raise ValueError(f"cell_mask {mask_path} selects none of the {len(coords_df)} domain cells.")
+    return coords_df[keep]
+
+
 class SimulationConfig:
     """Store and validate simulation configuration."""
     
@@ -436,9 +473,17 @@ class SimulationConfig:
         self._validate_adaptive_planting()
         self._validate_co2_scenario()
         self._validate_irrigation_management()
+        self._validate_optional_files()
         
         # Create output directory if it doesn't exist
         self.config['output_dir'].mkdir(parents=True, exist_ok=True)
+
+    def _validate_optional_files(self):
+        """Check that the optional cell_mask and spam_file exist."""
+        for key in ('cell_mask', 'spam_file'):
+            path = self.config.get(key)
+            if path is not None and not Path(path).exists():
+                raise ValueError(f"{key} not found: {path}")
 
     def _validate_adaptive_planting(self):
         """Check adaptive_planting names only AquaCrop planting-rule attributes.
@@ -521,6 +566,10 @@ class SimulationConfig:
         # Build coords from Precipitation file
         print("  Extracting coordinates from precipitation grid...")
         coords_df = self._get_coordinates_from_weather(Path(weather_files['Precipitation']))
+        if self.config.get('cell_mask') is not None:
+            n_domain = len(coords_df)
+            coords_df = apply_cell_mask(coords_df, self.config['cell_mask'])
+            print(f"  Cell mask keeps {len(coords_df)} of {n_domain} cells")
         
         # Validate soil data
         print("  Checking soil data...")
@@ -542,6 +591,7 @@ class SimulationConfig:
             end_year,
             self.config['crop'],
             self.config['irrigation'],
+            spam_file=self.config.get('spam_file'),
         )
         
         print("All input files validated successfully!")

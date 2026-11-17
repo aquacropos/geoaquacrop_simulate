@@ -430,14 +430,13 @@ def worker_run(
         final_stats = apply_enrichers(final_stats, context)
         
         logger.info(f"Cell {i}: Simulation completed successfully")
-        
-        return {
-            "summary": final_stats,
-            "daily": {
-                'water_flux': water_flux,
-                'crop_growth': crop_growth
-            }
-        }
+
+        # The enrichers above have used the daily outputs. Unless they are to be
+        # saved, drop them here: returned to the parent, every cell's daily
+        # series together can exceed the memory of a workstation.
+        daily = ({'water_flux': water_flux, 'crop_growth': crop_growth}
+                 if config.get('save_daily', True) else None)
+        return {"summary": final_stats, "daily": daily}
         
     except Exception as e:
         logger.error(f"Cell {i}: Error - {str(e)}")
