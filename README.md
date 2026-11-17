@@ -105,7 +105,7 @@ This works from a script, a notebook or an IDE console (Spyder, Jupyter).
 
 ## Supported crop types
 
-Barley, Cassava, Cotton, Dry Bean, Maize, Paddy Rice (seasons 1, 2 & 3), Potato,
+Barley, Cassava, Cotton, Dry Bean, Maize, Paddy Rice (seasons 1 & 2), Potato,
 Sorghum, Soybean, Sugar Beet, Sugar Cane, Sunflower, Wheat (summer & winter).
 
 ## Output files

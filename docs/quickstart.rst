@@ -148,6 +148,6 @@ Written to ``<output_dir>/``:
 Supported crop types
 --------------------
 
-Barley, Cassava, Cotton, Dry Bean, Maize, Paddy Rice (seasons 1, 2 & 3), Potato,
+Barley, Cassava, Cotton, Dry Bean, Maize, Paddy Rice (seasons 1 & 2), Potato,
 Sorghum, Soybean, Sugar Beet, Sugar Cane, Sunflower, Wheat (summer & winter) —
 matching the crop calendar and crop area datasets from geoaquacrop_preprocess.
