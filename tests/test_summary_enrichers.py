@@ -152,6 +152,27 @@ class TestEnrichers:
         assert list(out["wp_et_kg_per_m3"]) == pytest.approx([20.0, 10.0])
         assert list(out["wp_irrigation_kg_per_m3"]) == pytest.approx([6.0, 3.0])
 
+    def test_seasonal_drainage_per_season(self):
+        n = 10
+        wf = pd.DataFrame({
+            "dap": list(range(1, n + 1)) * 2,
+            "season_counter": [0] * n + [1] * n,
+            "DeepPerc": [1.0] * n + [0.5] * n,
+            "Runoff": [0.0] * n + [2.0] * n,
+        })
+        ctx = _context()
+        ctx["daily"]["water_flux"] = wf
+        summary = pd.DataFrame({"Season": [0, 1], "Dry yield (tonne/ha)": [5.0, 5.0]})
+        out = se.add_seasonal_drainage(summary, ctx)
+        assert list(out["deep_percolation_mm"]) == pytest.approx([10.0, 5.0])
+        assert list(out["runoff_mm"]) == pytest.approx([0.0, 20.0])
+
+    def test_seasonal_drainage_without_daily_is_nan(self):
+        ctx = _context()
+        ctx["daily"] = None
+        out = se.add_seasonal_drainage(_summary(), ctx)
+        assert np.isnan(out["deep_percolation_mm"].iloc[0])
+
     def test_total_water_input(self):
         summ = _summary(seasonal_precip_mm=30.0)
         out = se.add_total_water_input(summ, _context())

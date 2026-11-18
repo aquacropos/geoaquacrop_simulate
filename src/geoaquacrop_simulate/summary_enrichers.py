@@ -110,6 +110,25 @@ def add_seasonal_et(summary, context):
 
 
 @enricher
+def add_seasonal_drainage(summary, context):
+    """Deep percolation and surface runoff during the growing season (mm).
+
+    Water that leaves the root zone downwards or over the surface. For irrigated
+    runs these are the losses that separate net from gross irrigation needs.
+    """
+    daily = context.get('daily')
+    if daily is None:
+        summary['deep_percolation_mm'] = np.nan
+        summary['runoff_mm'] = np.nan
+        return summary
+    water_flux = daily['water_flux']
+    crop_obj = context['crop_obj']
+    summary['deep_percolation_mm'] = _sum_during_season(water_flux, 'DeepPerc', crop_obj, summary)
+    summary['runoff_mm'] = _sum_during_season(water_flux, 'Runoff', crop_obj, summary)
+    return summary
+
+
+@enricher
 def add_total_water_input(summary, context):
     """Total water reaching the crop during season: precipitation + irrigation (mm).
 

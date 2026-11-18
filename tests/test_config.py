@@ -261,3 +261,65 @@ class TestValidateSpam:
         with pytest.warns(UserWarning, match="production"):
             res = InputValidator.validate_spam_data(d, 2008, 2010, "Maize", "rainfed")
         assert res["variable"] is None
+
+
+# ---------------------------------------------------------------------------
+# cell_mask and spam_file
+# ---------------------------------------------------------------------------
+def _write_mask(path, grid, values, name="mask", extra=None):
+    import numpy as np
+    import xarray as xr
+    data = {name: (("y", "x"), np.asarray(values, dtype="uint8"))}
+    if extra:
+        data[extra] = (("y", "x"), np.zeros((len(grid["y"]), len(grid["x"])), dtype="float32"))
+    xr.Dataset(data, coords={"y": grid["y"], "x": grid["x"]}).to_netcdf(path)
+    return path
+
+
+class TestCellMask:
+    def test_mask_keeps_selected_cells_and_their_ids(self, valid_config_dict, grid, tmp_path):
+        full = SimulationConfig(dict(valid_config_dict)).validate_all_inputs()["coords"]
+        # keep only the first row of the grid (y = 10.00)
+        mask = _write_mask(tmp_path / "m.nc", grid, [[1, 1], [0, 0], [0, 0]])
+        sc = SimulationConfig({**valid_config_dict, "cell_mask": str(mask)})
+        coords = sc.validate_all_inputs()["coords"]
+        assert len(coords) == 2 and set(coords["y"].round(6)) == {10.0}
+        # cell ids (index) are those of the unmasked run
+        assert list(coords.index) == list(full[full["y"].round(6) == 10.0].index)
+
+    def test_single_variable_with_any_name(self, valid_config_dict, grid, tmp_path):
+        mask = _write_mask(tmp_path / "m.nc", grid, [[1, 0], [0, 0], [0, 0]], name="rice")
+        coords = SimulationConfig({**valid_config_dict, "cell_mask": str(mask)}).validate_all_inputs()["coords"]
+        assert len(coords) == 1
+
+    def test_ambiguous_variables_raise(self, valid_config_dict, grid, tmp_path):
+        mask = _write_mask(tmp_path / "m.nc", grid, [[1, 0], [0, 0], [0, 0]], name="rice", extra="area")
+        with pytest.raises(ValueError, match="several variables"):
+            SimulationConfig({**valid_config_dict, "cell_mask": str(mask)}).validate_all_inputs()
+
+    def test_mask_selecting_nothing_raises(self, valid_config_dict, grid, tmp_path):
+        # only the cell that is already outside the weather domain
+        values = [[0, 0], [0, 0], [0, 1]]
+        mask = _write_mask(tmp_path / "m.nc", grid, values)
+        with pytest.raises(ValueError, match="selects none"):
+            SimulationConfig({**valid_config_dict, "cell_mask": str(mask)}).validate_all_inputs()
+
+    def test_missing_mask_file_raises(self, valid_config_dict, tmp_path):
+        with pytest.raises(ValueError, match="cell_mask not found"):
+            SimulationConfig({**valid_config_dict, "cell_mask": str(tmp_path / "none.nc")})
+
+
+class TestSpamFile:
+    def test_spam_file_overrides_midpoint_rule(self, valid_config_dict, writers, tmp_path):
+        d = tmp_path / "other"; d.mkdir()
+        writers["spam"](d, refyear=2020, var_name="Maize_rf_physical_area")
+        spam_file = d / "spam2020_physical_area.nc"
+        # the 2008-2010 run would otherwise pick spam2010 from spam_path
+        sc = SimulationConfig({**valid_config_dict, "spam_file": str(spam_file)})
+        res = sc.validate_all_inputs()["spam"]
+        assert res["filepath"] == str(spam_file)
+        assert res["variable"] == "Maize_rf_physical_area"
+
+    def test_missing_spam_file_raises(self, valid_config_dict, tmp_path):
+        with pytest.raises(ValueError, match="spam_file not found"):
+            SimulationConfig({**valid_config_dict, "spam_file": str(tmp_path / "none.nc")})

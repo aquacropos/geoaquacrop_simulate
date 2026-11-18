@@ -132,6 +132,28 @@ class TestIntegration:
         assert res["daily"] is not None
         assert "water_flux" in res["daily"]
 
+    def test_save_daily_false_returns_no_daily(self, validated, logger):
+        """Workers drop daily series so the parent never holds them all."""
+        config, inputs = validated
+        res = worker_run(0, _first_row(inputs["coords"]), inputs,
+                         {**config, "save_daily": False}, logger)
+        assert "error" not in res["summary"].columns
+        assert res["daily"] is None
+        # metrics derived from the daily series are still computed
+        assert res["summary"]["seasonal_et_mm"].notna().all()
+        assert res["summary"]["deep_percolation_mm"].notna().all()
+
+    def test_drainage_matches_daily_water_flux(self, validated, logger):
+        config, inputs = validated
+        res = worker_run(0, _first_row(inputs["coords"]), inputs, config, logger)
+        wf = res["daily"]["water_flux"]
+        summary = res["summary"]
+        for _, row in summary.iterrows():
+            season = wf[(wf["season_counter"] == row["Season"]) & (wf["dap"] >= 1)
+                        & (wf["dap"] <= row["season_length_days"])]
+            assert row["deep_percolation_mm"] == pytest.approx(season["DeepPerc"].sum())
+            assert row["runoff_mm"] == pytest.approx(season["Runoff"].sum())
+
     def test_planting_date_is_per_season(self, validated, logger):
         config, inputs = validated
         res = worker_run(0, _first_row(inputs["coords"]), inputs, config, logger)

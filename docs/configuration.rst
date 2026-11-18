@@ -55,6 +55,13 @@ Simulation
    * - ``output_dir``
      - ``'outputs'``
      - Where results and logs are written
+   * - ``cell_mask``
+     - ``None``
+     - NetCDF selecting the cells to simulate; see `Cell mask`_
+   * - ``spam_file``
+     - ``None``
+     - SPAM physical-area NetCDF to use instead of the one picked from
+       ``spam_path`` by the midpoint of the simulation period
 
 Yield correction
 ----------------
@@ -173,6 +180,36 @@ Allowed keys: ``irrigation_method`` (1-5), ``SMT``, ``MaxIrr``,
 ``MaxIrrSeason``, ``IrrInterval``, ``NetIrrSMT``, ``Schedule``, ``depth``,
 ``WetSurf`` and ``AppEff``. Unknown keys raise an error, as does setting it on
 a rainfed run.
+
+Cell mask
+---------
+
+By default every cell of the weather grid inside the domain is simulated.
+``cell_mask`` restricts the run to a subset, typically cells with enough area
+of the crop:
+
+.. code-block:: python
+
+   run(..., cell_mask='processed/rainfed_rice_mask.nc')
+
+The file is a NetCDF grid with ``y``/``x`` coordinates. Cells where its
+variable is non-zero are simulated; the variable is ``mask`` if present,
+otherwise the file's only data variable. Values are looked up at the nearest
+mask cell, so the mask need not be on exactly the same grid. Cell ids in the
+outputs are those of an unmasked run, so masked and unmasked results can be
+joined on ``cell_id``. A mask that selects no cell raises an error.
+
+SPAM crop area
+--------------
+
+Crop area per cell, used for ``production_tonnes``, comes from
+``spam{2010|2020}_physical_area.nc`` in ``spam_path``, the reference year
+nearest the middle of the simulation period. ``spam_file`` names the file
+instead, e.g. to use SPAM 2020 for a historical baseline:
+
+.. code-block:: python
+
+   run(..., spam_file='processed/spam2020_physical_area.nc')
 
 Adaptive planting
 -----------------
